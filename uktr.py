@@ -11,6 +11,7 @@ Backend is any OpenAI-compatible server, set in ~/.config/uktr/config or env:
   UKTR_URL    default http://localhost:11434/v1  (ollama; FastFlowLM NPU = http://localhost:52625/v1)
   UKTR_MODEL  default gemma4:12b
   UKTR_TO     default English
+  UKTR_LISTEN_MODEL  translation model for `listen` (default UKTR_MODEL)
   UKTR_LANG   spoken language for `listen`, default uk ("" = Whisper guesses)
 """
 import json
@@ -40,14 +41,15 @@ SYSTEM = (f"You are a translator. Translate the user's text to {TO}. "
           "Output only the translation, keep paragraph breaks and markdown, add no comments.")
 
 
-def translate(text):
-    if "hy-mt" in MODEL.lower():
+def translate(text, model=None):
+    model = model or MODEL
+    if "hy-mt" in model.lower():
         # Hunyuan-MT is tuned on this exact user-only prompt; a system prompt makes it worse.
         messages = [{"role": "user", "content":
                      f"Translate the following segment into {TO}, without additional explanation.\n\n{text}"}]
     else:
         messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": text}]
-    body = {"model": MODEL, "temperature": 0.2, "stream": False, "messages": messages}
+    body = {"model": model, "temperature": 0.2, "stream": False, "messages": messages}
     req = urllib.request.Request(URL + "/chat/completions", json.dumps(body).encode(),
                                  {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=600) as r:
@@ -159,6 +161,7 @@ def listen(argv):
     import threading
     import time
     show_orig = "--orig" in argv
+    listen_model = conf.get("UKTR_LISTEN_MODEL", MODEL)  # fast model: subtitles must keep up
     lang = conf.get("UKTR_LANG", "uk")  # "" = let Whisper guess (it guesses badly on short chunks)
     min_s, max_s = 4, float(conf.get("UKTR_LISTEN_MAX", "12"))
     silence = float(conf.get("UKTR_SILENCE", "300"))  # int16 RMS below this = quiet
@@ -177,7 +180,7 @@ def listen(argv):
                 stamp = time.strftime("%H:%M:%S", time.localtime(t))
                 if show_orig:
                     print(f"\033[2m{stamp}  {src}\033[0m", flush=True)
-                print(f"{stamp}  {translate(src)}", flush=True)
+                print(f"{stamp}  {translate(src, listen_model)}", flush=True)
             except OSError as e:
                 print(f"[uktr] {e}", file=sys.stderr, flush=True)
             if jobs.qsize() > 3:

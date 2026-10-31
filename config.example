@@ -2,7 +2,9 @@
 
 # NPU via FastFlowLM (systemctl --user start flm):
 UKTR_URL=http://localhost:52625/v1
-UKTR_MODEL=hy-mt2-flash:1.8b
+UKTR_MODEL=translategemma:4b
+# uktr listen: faster model so subtitles keep up
+UKTR_LISTEN_MODEL=hy-mt2-flash:1.8b
 
 # GPU via ollama:
 #UKTR_URL=http://localhost:11434/v1

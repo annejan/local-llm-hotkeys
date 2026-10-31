@@ -94,6 +94,7 @@ Tested on a Ryzen AI 7 PRO 350 (XDNA2) with openSUSE Tumbleweed, kernel 7.2+ (`a
 
    ```sh
    flm pull hy-mt2-flash:1.8b    # translation, ~1.4 GB
+   flm pull translategemma:4b    # better translation, slower, ~4.5 GB
    flm pull whisper-v3:turbo     # speech-to-text for `listen`, ~0.6 GB
    ```
 
@@ -113,7 +114,11 @@ Tested on a Ryzen AI 7 PRO 350 (XDNA2) with openSUSE Tumbleweed, kernel 7.2+ (`a
 - `hy-mt2-flash:1.8b` (Hunyuan Hy-MT2): a model only for translation. It is fast on the
   NPU (about 50 tokens/s output) and gives good results. uktr sends it the user-only prompt
   it was trained on when the model name contains `hy-mt`.
-- `translategemma:4b`: also a translation model. Try it if Hy-MT2 gets a text wrong.
+- `translategemma:4b`: also a translation model. Better than Hy-MT2 with slang and
+  abbreviations, but about 3.5x slower (6.3 s against 1.8 s for two paragraphs).
+  The example config uses it for `clip`, `shot` and files, and Hy-MT2 for `listen`.
+  FLM loads one translation model at a time, so the first request after a change of
+  model takes 2–5 s more.
 - Any chat model works too (for example `gemma4:12b` in ollama). These get a system prompt
   that tells them to output only the translation.
 
@@ -126,6 +131,7 @@ override the file. See `config.example`.
 |---|---|---|
 | `UKTR_URL` | `http://localhost:11434/v1` | OpenAI-compatible API base URL |
 | `UKTR_MODEL` | `gemma4:12b` | translation model |
+| `UKTR_LISTEN_MODEL` | `UKTR_MODEL` | translation model for `listen` |
 | `UKTR_TO` | `English` | target language |
 | `UKTR_OCR` | `ukr+eng` | tesseract languages for `shot` |
 | `UKTR_LANG` | `uk` | spoken language for `listen` (empty = auto-detect) |
