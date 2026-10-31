@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Service
+MimeType=application/pdf;application/epub+zip;text/html;text/plain;text/markdown;application/vnd.openxmlformats-officedocument.wordprocessingml.document;application/vnd.oasis.opendocument.text;
+Actions=uktr
+X-KDE-Priority=TopLevel
+
+[Desktop Action uktr]
+Name=Translate to English (uktr)
+Icon=preferences-desktop-locale
+Exec=sh -c 'notify-send -a uktr uktr "translating $(basename "$1")…"; if uktr "$1" 2>/dev/null; then notify-send -a uktr uktr "done: ${1%%.*}.en.md"; else notify-send -a uktr uktr "failed: $(basename "$1")"; fi' sh %f

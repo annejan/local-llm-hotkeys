@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=uktr: translate screen region
+Comment=Select a screen region, OCR it and translate to English
+Exec=uktr shot
+Icon=preferences-desktop-locale
+Categories=Utility;
+X-KDE-Shortcuts=Meta+Shift+Y

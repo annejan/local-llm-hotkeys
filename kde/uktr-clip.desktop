@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=uktr: translate clipboard
+Comment=Translate clipboard text to English with a local LLM
+Exec=uktr clip
+Icon=preferences-desktop-locale
+NoDisplay=false
+Categories=Utility;
+X-KDE-Shortcuts=Meta+Shift+T

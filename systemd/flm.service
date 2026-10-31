@@ -1,0 +1,10 @@
+[Unit]
+Description=FastFlowLM NPU server (OpenAI API on :52625)
+
+[Service]
+ExecStart=%h/.local/bin/flm serve hy-mt2-flash:1.8b -a 1
+Restart=on-failure
+LimitMEMLOCK=infinity
+
+[Install]
+WantedBy=default.target

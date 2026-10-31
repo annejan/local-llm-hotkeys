@@ -1,0 +1,22 @@
+# Copy to ~/.config/uktr/config. Env vars (UKTR_*) override this file.
+
+# NPU via FastFlowLM (systemctl --user start flm):
+UKTR_URL=http://localhost:52625/v1
+UKTR_MODEL=hy-mt2-flash:1.8b
+
+# GPU via ollama:
+#UKTR_URL=http://localhost:11434/v1
+#UKTR_MODEL=gemma4:12b
+
+# Target language (default English)
+#UKTR_TO=English
+
+# uktr shot: tesseract languages
+#UKTR_OCR=ukr+eng
+
+# uktr listen: spoken language for Whisper ("" = auto-detect, unreliable on short chunks)
+#UKTR_LANG=uk
+#UKTR_ASR_URL=http://localhost:52625/v1
+#UKTR_ASR_MODEL=whisper-v3:turbo
+#UKTR_LISTEN_MAX=12
+#UKTR_SILENCE=300
