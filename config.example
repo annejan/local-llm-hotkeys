@@ -31,3 +31,4 @@ UKTR_LISTEN_MODEL=hy-mt2-flash:1.8b
 # fixtext and ask: chat models
 #FIX_MODEL=qwen3.5:9b
 #ASK_MODEL=qwen3.5:9b
+#ASK_HISTORY=0   # do not save ask chats

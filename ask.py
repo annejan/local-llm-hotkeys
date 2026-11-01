@@ -3,17 +3,25 @@
 
   ask --popup           chat window (KDE hotkey Meta+Shift+Q; needs PySide6)
   ask                   chat in the terminal (empty line or Ctrl+D quits, /new starts a new chat)
+  ask --list            saved chats, newest first
+  ask --resume [N]      continue saved chat N in the terminal (default 1, the newest)
   ask QUESTION...       one question on the command line -> stdout
   ask < question        stdin -> stdout
 
 Window keys: Enter sends, Shift+Enter is a new line, Esc stops an answer or closes the
-window, Ctrl+N starts a new chat, Ctrl+Shift+C copies the last answer.
+window, Ctrl+N starts a new chat, Ctrl+H shows or hides the saved chats, Ctrl+Shift+C copies
+the last answer. Click a saved chat to continue it; right-click or Del removes it.
+
+Chats from the window and the terminal chat are saved after every answer, as JSON in
+~/.local/share/uktr/ask/. One-shot questions (ask QUESTION, ask < question) are not saved.
 
 Uses the same backend and config file as uktr (~/.config/uktr/config, UKTR_URL).
-  ASK_MODEL   default qwen3.5:9b (any chat model)
+  ASK_MODEL     default qwen3.5:9b (any chat model)
+  ASK_HISTORY   default 1; 0 = do not save chats
 """
 import datetime
 import functools
+import json
 import os
 import subprocess
 import sys
@@ -24,6 +32,9 @@ import uktr  # noqa: E402  (shares config and the streaming chat request)
 
 MODEL = uktr.conf.get("ASK_MODEL", "qwen3.5:9b")
 HISTORY_CHARS = 24000  # older turns are dropped so the prompt stays inside the context window
+SAVE = uktr.conf.get("ASK_HISTORY", "1") != "0"
+SAVE_DIR = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
+                        "uktr", "ask")
 
 RULES = ("You are a helpful assistant on the user's computer: {system}. Today is {today}. "
          "Answer in the language of the user's last message. Be short and concrete: a direct "
@@ -57,10 +68,35 @@ def system():
 
 
 class Chat:
-    """A conversation: the messages so far, and the request for the next answer."""
+    """A conversation: the messages so far, and the request for the next answer.
+    With save=True it is written to SAVE_DIR after every answer."""
 
-    def __init__(self):
-        self.turns = []  # {"role": "user" | "assistant", "content": ...}
+    def __init__(self, save=False, path=None, turns=None):
+        self.save, self.path = save and SAVE, path
+        self.turns = turns or []  # {"role": "user" | "assistant", "content": ...}
+
+    @classmethod
+    def load(cls, path):
+        with open(path, encoding="utf-8") as f:
+            return cls(save=True, path=path, turns=json.load(f)["turns"])
+
+    @property
+    def title(self):
+        first = next((t["content"] for t in self.turns if t["role"] == "user"), "")
+        return title_of(first)
+
+    def write(self):
+        if not self.save or not self.turns:
+            return
+        if not self.path:
+            os.makedirs(SAVE_DIR, exist_ok=True)
+            name = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+            self.path = os.path.join(SAVE_DIR, name + ".json")
+        tmp = self.path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"model": MODEL, "title": self.title, "turns": self.turns}, f,
+                      ensure_ascii=False, indent=1)
+        os.replace(tmp, self.path)  # a crash never leaves half a file
 
     def messages(self):
         today = datetime.date.today().strftime("%A %d %B %Y")
@@ -83,12 +119,48 @@ class Chat:
                 yield piece
         finally:
             self.turns.append({"role": "assistant", "content": answer.strip() or "(no answer)"})
+            self.write()
 
 
-def terminal():
+def title_of(question):
+    line = question.strip().splitlines()[0] if question.strip() else "(empty)"
+    return line if len(line) <= 60 else line[:59] + "…"
+
+
+def saved_chats():
+    """[(path, title, modified datetime, messages)], newest first. Broken files are skipped."""
+    found = []
+    try:
+        names = [n for n in os.listdir(SAVE_DIR) if n.endswith(".json")]
+    except FileNotFoundError:
+        return []
+    for name in names:
+        path = os.path.join(SAVE_DIR, name)
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            when = datetime.datetime.fromtimestamp(os.path.getmtime(path))
+            found.append((path, data.get("title") or name, when, len(data.get("turns", []))))
+        except (OSError, ValueError):
+            continue
+    return sorted(found, key=lambda c: c[2], reverse=True)
+
+
+def when_text(when):
+    today = datetime.date.today()
+    if when.date() == today:
+        return when.strftime("%H:%M")
+    if (today - when.date()).days < 7:
+        return when.strftime("%a %H:%M")
+    return when.strftime("%d %b %Y")
+
+
+def terminal(chat=None):
     import readline  # noqa: F401  (line editing and arrow-up history for input())
-    chat = Chat()
+    chat = chat or Chat(save=True)
     print(f"ask {MODEL}: empty line or Ctrl+D quits, /new starts a new chat.", file=sys.stderr)
+    for t in chat.turns:  # a resumed chat: show it first
+        print(f"\n> {t['content']}" if t["role"] == "user" else t["content"])
     while True:
         try:
             question = input("\n> ").strip()
@@ -98,7 +170,7 @@ def terminal():
         if not question:
             return
         if question == "/new":
-            chat = Chat()
+            chat = Chat(save=True)
             print("(new chat)", file=sys.stderr)
             continue
         answer = chat.ask(question)
@@ -118,8 +190,10 @@ def window():
     try:
         from PySide6.QtCore import QObject, Qt, Signal
         from PySide6.QtGui import QKeySequence, QShortcut
-        from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QPlainTextEdit,
-                                       QPushButton, QTextBrowser, QVBoxLayout, QWidget)
+        from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QListWidget,
+                                       QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit,
+                                       QPushButton, QSplitter, QTextBrowser, QVBoxLayout,
+                                       QWidget)
     except ImportError:
         # No Qt: chat in a terminal window instead.
         os.execvp("konsole", ["konsole", "-e", os.path.realpath(__file__)])
@@ -143,10 +217,18 @@ def window():
     class Window(QWidget):
         def __init__(self):
             super().__init__()
-            self.chat, self.busy, self.stop = Chat(), False, threading.Event()
+            self.chat, self.busy, self.stop = Chat(save=True), False, threading.Event()
             self.answer, self.error = "", ""
             self.setWindowTitle(f"ask — {MODEL}")
-            self.resize(760, 680)
+            self.resize(1000, 680)
+
+            self.list = QListWidget()
+            self.list.setWordWrap(True)
+            self.list.setSpacing(3)
+            self.list.itemClicked.connect(self.open_chat)
+            self.list.setContextMenuPolicy(Qt.CustomContextMenu)
+            self.list.customContextMenuRequested.connect(self.list_menu)
+            self.list.setVisible(SAVE)
 
             self.view = QTextBrowser(openExternalLinks=True)
             self.input = Input(self.send)
@@ -156,25 +238,92 @@ def window():
             self.button = QPushButton("Send", clicked=self.send)
             new = QPushButton("New chat", clicked=self.new_chat)
             copy = QPushButton("Copy answer", clicked=self.copy_answer)
+            saved = QPushButton("Saved chats", clicked=self.toggle_list, enabled=SAVE)
 
             row = QHBoxLayout()
+            row.addWidget(saved)
             row.addWidget(self.status, 1)
             for b in (new, copy, self.button):
                 row.addWidget(b)
-            layout = QVBoxLayout(self)
+            right = QWidget()
+            layout = QVBoxLayout(right)
+            layout.setContentsMargins(0, 0, 0, 0)
             layout.addWidget(self.view, 1)
             layout.addWidget(self.input)
             layout.addLayout(row)
+            split = QSplitter()
+            split.addWidget(self.list)
+            split.addWidget(right)
+            split.setStretchFactor(1, 1)
+            split.setSizes([240, 760])
+            QVBoxLayout(self).addWidget(split)
 
             QShortcut(QKeySequence("Ctrl+N"), self, self.new_chat)
+            QShortcut(QKeySequence("Ctrl+H"), self, self.toggle_list)
+            del_key = QShortcut(QKeySequence("Del"), self.list, self.delete_chat)
+            del_key.setContext(Qt.WidgetShortcut)
             QShortcut(QKeySequence("Ctrl+Shift+C"), self, self.copy_answer)
             QShortcut(QKeySequence("Esc"), self, self.escape)
 
             self.stream = Stream()
             self.stream.piece.connect(self.on_piece)
             self.stream.done.connect(self.on_done)
+            self.fill_list()
             self.render()
             self.input.setFocus()
+
+        def fill_list(self):
+            self.list.clear()
+            for path, title, when, n in saved_chats():
+                item = QListWidgetItem(f"{title}\n{when_text(when)} · {n // 2} question{'s' if n // 2 != 1 else ''}")
+                item.setData(Qt.UserRole, path)
+                item.setToolTip(title)
+                self.list.addItem(item)
+                if path == self.chat.path:
+                    item.setSelected(True)
+                    self.list.setCurrentItem(item)
+
+        def toggle_list(self):
+            if SAVE:
+                self.list.setVisible(not self.list.isVisible())
+
+        def open_chat(self, item):
+            if self.busy:
+                return
+            path = item.data(Qt.UserRole)
+            try:
+                self.chat = Chat.load(path)
+            except (OSError, ValueError) as e:
+                self.status.setText(f"cannot open: {e}")
+                return
+            self.error = ""
+            self.status.setText("")
+            self.render()
+            self.input.setFocus()
+
+        def list_menu(self, pos):
+            item = self.list.itemAt(pos)
+            if item:
+                menu = QMenu(self)
+                menu.addAction("Delete chat", lambda: self.delete_chat(item))
+                menu.exec(self.list.mapToGlobal(pos))
+
+        def delete_chat(self, item=None):
+            item = item or self.list.currentItem()
+            if not item or self.busy:
+                return
+            path = item.data(Qt.UserRole)
+            if QMessageBox.question(self, "ask", f"Delete this chat?\n\n{item.toolTip()}") \
+                    != QMessageBox.Yes:
+                return
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            if path == self.chat.path:
+                self.chat = Chat(save=True)
+                self.render()
+            self.fill_list()
 
         def render(self):
             turns = list(self.chat.turns)
@@ -191,7 +340,8 @@ def window():
                 parts.append(f"*{self.error}*")
             if not parts:
                 parts.append(f"*Chat with {MODEL} on the local server. "
-                             "The conversation is kept until you press New chat.*")
+                             + ("Chats are saved; open an old one on the left.*" if SAVE else
+                                "The conversation is kept until you press New chat.*"))
             self.view.setMarkdown("\n\n---\n\n".join(parts))
             bar = self.view.verticalScrollBar()
             bar.setValue(bar.maximum())
@@ -236,13 +386,15 @@ def window():
             self.error = "" if result == "stopped" else result
             self.button.setText("Send")
             self.status.setText(result if result == "stopped" else "")
+            self.fill_list()
             self.render()
             self.input.setFocus()
 
         def new_chat(self):
             if self.busy:
                 return
-            self.chat, self.error = Chat(), ""
+            self.chat, self.error = Chat(save=True), ""
+            self.list.clearSelection()
             self.status.setText("new chat")
             self.render()
             self.input.setFocus()
@@ -277,6 +429,16 @@ def main(argv):
         return
     if argv == ["--popup"]:
         return window()
+    if argv == ["--list"]:
+        for i, (path, title, when, n) in enumerate(saved_chats(), 1):
+            print(f"{i:3}  {when:%Y-%m-%d %H:%M}  {title}  ({n // 2} question{'s' if n // 2 != 1 else ''})")
+        return
+    if argv[:1] == ["--resume"]:
+        chats = saved_chats()
+        n = int(argv[1]) if len(argv) > 1 and argv[1].isdigit() else 1
+        if not 1 <= n <= len(chats):
+            sys.exit(f"no saved chat {n} (see ask --list)")
+        return terminal(Chat.load(chats[n - 1][0]))
     if not argv and sys.stdin.isatty():
         return terminal()
     question = " ".join(argv) or sys.stdin.read()

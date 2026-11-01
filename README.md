@@ -120,14 +120,24 @@ the language of your message and knows today's date, the distribution and the de
 | Enter / Shift+Enter | send / new line |
 | Esc | stop the answer, or close the window |
 | Ctrl+N | new chat |
+| Ctrl+H | show or hide the saved chats |
 | Ctrl+Shift+C | copy the last answer |
 
 | Command | Input | Output |
 |---|---|---|
 | `ask --popup` | chat window | chat window |
 | `ask` | chat in the terminal (`/new` starts a new chat, empty line quits) | terminal |
+| `ask --list` | saved chats, newest first | stdout |
+| `ask --resume [N]` | continue saved chat N (default 1, the newest) | terminal |
 | `ask QUESTION...` | command line | stdout |
 | `ask < question` | stdin | stdout |
+
+### Saved chats
+
+Every chat from the window or the terminal is saved after each answer, as a JSON file in
+`~/.local/share/uktr/ask/`. The window shows them on the left, newest first: click one to read
+it and ask more. Right-click or Del removes a chat (after a confirmation). One-shot questions
+(`ask QUESTION`, `ask < question`) are not saved. Set `ASK_HISTORY=0` to save nothing.
 
 The window needs PySide6 (`python313-pyside6` on openSUSE). Without it, `ask --popup` opens
 the terminal chat in Konsole. Model: `ASK_MODEL`, default `qwen3.5:9b`. The first words
@@ -249,6 +259,7 @@ override the file. See `config.example`.
 | `ELI12_LANG` | `nl` | language for `eli12`: `nl`, `en` or `both` |
 | `FIX_MODEL` | `qwen3.5:9b` | chat model for `fixtext` |
 | `ASK_MODEL` | `qwen3.5:9b` | chat model for `ask` |
+| `ASK_HISTORY` | `1` | `0`: do not save `ask` chats |
 
 Example, one-off Russian to Dutch:
 
