@@ -185,3 +185,7 @@ Example, one-off Russian to Dutch:
 UKTR_TO=Dutch uktr < article.txt
 UKTR_LANG=ru uktr listen
 ```
+
+## License
+
+MIT, see [LICENSE](LICENSE).
