@@ -1,15 +1,22 @@
-# uktr
+# local-llm-hotkeys
 
-Rough translation of Ukrainian (or any other language) to English with a local LLM.
-It is for reading, not for publishing. The output is rough, and some mistakes are funny.
+KDE hotkeys and Dolphin menu actions that send text to a local LLM. Two tools:
 
-uktr talks to any OpenAI-compatible server. The default setup runs everything on the
+- **uktr**: rough translation of Ukrainian (or any other language) to English.
+- **eli12**: explains a text like you are 12.
+
+Both talk to any OpenAI-compatible server. The default setup runs everything on the
 AMD Ryzen AI NPU with [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM), so the GPU
-stays free (for example for video playback).
+stays free (for example for video playback). Nothing leaves your computer.
 
-One script, Python standard library only.
+Python standard library only.
 
-## Modes
+## uktr: translate
+
+Rough translation with a local LLM. It is for reading, not for publishing. The output is
+rough, and some mistakes are funny.
+
+### Modes
 
 | Command | Input | Output |
 |---|---|---|
@@ -21,7 +28,7 @@ One script, Python standard library only.
 
 Long text goes to the model in chunks of about 1500 characters, split at paragraph breaks.
 
-### `uktr listen`
+#### `uktr listen`
 
 Live subtitles for what plays on the speakers (YouTube, a call, a podcast):
 
@@ -89,6 +96,8 @@ For an email in Thunderbird: select the text, press Ctrl+C, then Meta+Shift+E.
 ## Install
 
 ```sh
+git clone https://github.com/annejan/local-llm-hotkeys.git
+cd local-llm-hotkeys
 ln -s "$PWD/uktr.py" ~/.local/bin/uktr
 ln -s "$PWD/eli12.py" ~/.local/bin/eli12
 mkdir -p ~/.config/uktr && cp config.example ~/.config/uktr/config
