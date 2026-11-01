@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """eli12: explain a text (an email, a README, an article) like you are 12. Super short, in Dutch or English.
 
-  eli12 FILE            .pdf .epub .docx .html .txt .md -> stdout
+  eli12 FILE            .pdf .epub .docx .odt .html .txt .md -> stdout
   eli12 < text          stdin -> stdout
   eli12 clip            clipboard -> popup window
   eli12 --popup FILE    file -> popup window (Dolphin service menu)
@@ -9,19 +9,19 @@
   -l nl | en | both     language (default nl, or ELI12_LANG); both = Dutch, then English
 
 Uses the same backend and config file as uktr (~/.config/uktr/config, UKTR_URL).
-  ELI12_MODEL   default qwen3.5:9b (any chat model; translation-only models do not work)
-  ELI12_LANG    default nl
+  ELI12_MODEL       default qwen3.5:9b (any chat model; translation-only models do not work)
+  ELI12_LANG        default nl
+  ELI12_SENTENCES   default 5 (longest explanation)
 """
 import os
 import re
-import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import uktr  # noqa: E402  (shares config, file extraction and the popup)
+import llm  # noqa: E402
 
-MODEL = uktr.conf.get("ELI12_MODEL", "qwen3.5:9b")
-SENTENCES = int(uktr.conf.get("ELI12_SENTENCES", "5"))  # length of the explanation
+MODEL = llm.conf.get("ELI12_MODEL", "qwen3.5:9b")
+SENTENCES = int(llm.conf.get("ELI12_SENTENCES", "5"))
 MAX_CHARS = 60000  # ~20k tokens; longer text is cut, the start of a README says the most
 LANGS = {"nl": "Dutch", "en": "English"}
 
@@ -43,27 +43,31 @@ RULES = ("You explain texts to a smart 12-year-old. The text can be anything: an
 KIND = re.compile(r"^\W*\[?(message|document)\]?\W*\n?", re.I)
 
 
-def explain(text, lang):
-    """One explanation in one language (nl or en). Both = call this twice: one language per
-    request is far more reliable than asking a small model for two sections.
-
-    The model labels the text first. A small model ignores "no to-do line for documentation",
-    but it labels reliably, so for a [document] the code keeps only the first paragraph."""
-    rules = RULES.format(todo=TODO[lang], you=YOU[lang], lang=LANGS[lang], n=SENTENCES)
-    out = uktr.chat(rules, text[:MAX_CHARS], MODEL, temperature=0.3)
+def clean(out):
+    """Remove the [message]/[document] label. A small model ignores "no to-do line for
+    documentation", but it labels reliably, so for a [document] keep only the first paragraph."""
     m = KIND.match(out)
     if not m:
         return out
     out = out[m.end():].strip()
     if m.group(1).lower() == "document":
-        # The explanation is the first paragraph. After it, small models add install steps or
-        # "no action needed" in many wordings; drop everything after the first blank line.
+        # After the explanation, small models add install steps or "no action needed" in many
+        # wordings; drop everything after the first blank line.
         out = re.split(r"\n\s*\n", out, maxsplit=1)[0].strip()
     return out
 
 
+def explain(text, lang):
+    """One explanation in one language (nl or en). Both = call this twice: one language per
+    request is far more reliable than asking a small model for two sections."""
+    rules = RULES.format(todo=TODO[lang], you=YOU[lang], lang=LANGS[lang], n=SENTENCES)
+    return clean(llm.complete(rules, text[:MAX_CHARS], MODEL, temperature=0.3))
+
+
 def main(argv):
-    lang = uktr.conf.get("ELI12_LANG", "nl").lower()
+    if argv[:1] in (["-h"], ["--help"]):
+        return print(__doc__)
+    lang = llm.conf.get("ELI12_LANG", "nl").lower()
     if "-l" in argv:
         i = argv.index("-l")
         lang = argv[i + 1].lower() if i + 1 < len(argv) else ""
@@ -71,34 +75,25 @@ def main(argv):
     if lang not in (*LANGS, "both"):
         sys.exit("language must be nl, en or both")
     langs = ["nl", "en"] if lang == "both" else [lang]
-    popup = "--popup" in argv
+    gui = "--popup" in argv or argv[:1] == ["clip"]
     argv = [a for a in argv if a != "--popup"]
 
-    if argv and argv[0] in ("-h", "--help"):
-        print(__doc__)
-        return
-    if argv and argv[0] == "clip":
-        text, title, popup = subprocess.run(["wl-paste", "--no-newline"], capture_output=True,
-                                            text=True).stdout, "clipboard", True
-    elif argv:
-        text, title = uktr.extract(argv[0]), os.path.basename(argv[0])
-    else:
-        text, title = sys.stdin.read(), "stdin"
-
-    if not text.strip():
-        msg = f"nothing to explain ({title} is empty)"
-        return uktr.notify(msg, "eli12") if popup else sys.exit(msg)
-    if popup:
-        uktr.notify(f"explaining {title}…", "eli12")
-    try:
+    with llm.errors("eli12", gui):
+        if argv[:1] == ["clip"]:
+            text, title = llm.clipboard(), "clipboard"
+        elif argv:
+            text, title = llm.extract(argv[0]), os.path.basename(argv[0])
+        else:
+            text, title = sys.stdin.read(), "stdin"
+        if not text.strip():
+            raise llm.Error(f"nothing to explain ({title} is empty)")
+        if gui:
+            llm.notify(f"explaining {title}…", "eli12")
         out = "\n\n".join(explain(text, lg) for lg in langs)
-    except OSError as e:
-        msg = f"eli12 failed: {e}"
-        return uktr.notify(msg, "eli12") if popup else sys.exit(msg)
-    if popup:
-        uktr.popup(f"eli12: {title}", out)
-    else:
-        print(out)
+        if gui:
+            llm.popup(f"eli12: {title}", out)
+        else:
+            print(out)
 
 
 if __name__ == "__main__":

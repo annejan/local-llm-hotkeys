@@ -5,11 +5,12 @@
   uktr clip             clipboard -> popup window (result also copied to clipboard)
   uktr shot             select screen region -> OCR -> popup
   uktr listen [--orig]  live subtitles: system audio -> Whisper -> translation (terminal)
-  uktr FILE [-o OUT]    .pdf .epub .docx .html .txt .md -> OUT (default FILE.en.md)
+  uktr FILE [-o OUT]    .pdf .epub .docx .odt .html .txt .md -> OUT (default FILE.en.md)
+  uktr --notify FILE    same, with notifications instead of terminal output (Dolphin menu)
 
 Backend is any OpenAI-compatible server, set in ~/.config/uktr/config or env:
-  UKTR_URL    default http://localhost:11434/v1  (ollama; FastFlowLM NPU = http://localhost:52625/v1)
-  UKTR_MODEL  default gemma4:12b
+  UKTR_URL    default http://localhost:52625/v1 (FastFlowLM on the NPU; ollama: :11434/v1)
+  UKTR_MODEL  default translategemma:4b
   UKTR_TO     default English
   UKTR_LISTEN_MODEL  translation model for `listen` (default UKTR_MODEL)
   UKTR_LANG   spoken language for `listen`, default uk ("" = Whisper guesses)
@@ -21,21 +22,15 @@ import sys
 import tempfile
 import urllib.request
 
-conf = {}
-try:
-    with open(os.path.expanduser("~/.config/uktr/config")) as f:
-        for line in f:
-            key, sep, val = line.strip().partition("=")
-            if sep and not key.startswith("#"):
-                conf[key.strip()] = val.split(" #")[0].strip()  # "KEY=val   # comment"
-except FileNotFoundError:
-    pass
-conf.update({k: v for k, v in os.environ.items() if k.startswith("UKTR_")})
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import llm  # noqa: E402
 
-URL = conf.get("UKTR_URL", "http://localhost:11434/v1").rstrip("/")
-MODEL = conf.get("UKTR_MODEL", "gemma4:12b")
+conf = llm.conf
+MODEL = conf.get("UKTR_MODEL", "translategemma:4b")
 TO = conf.get("UKTR_TO", "English")
-CHUNK = 1500  # characters per request; small models drift on long input
+CODES = {"english": "en", "dutch": "nl", "german": "de", "french": "fr", "spanish": "es",
+         "italian": "it", "polish": "pl", "ukrainian": "uk", "russian": "ru"}
+SUFFIX = CODES.get(TO.lower(), TO.lower().replace(" ", "-"))  # FILE.en.md, FILE.nl.md, ...
 
 SYSTEM = (f"You are a translator. Translate the user's text to {TO}. "
           "Output only the translation, keep paragraph breaks and markdown, add no comments.")
@@ -45,59 +40,13 @@ def translate(text, model=None):
     model = model or MODEL
     if "hy-mt" in model.lower():
         # Hunyuan-MT is tuned on this exact user-only prompt; a system prompt makes it worse.
-        messages = [{"role": "user", "content":
-                     f"Translate the following segment into {TO}, without additional explanation.\n\n{text}"}]
-    else:
-        messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": text}]
-    body = {"model": model, "temperature": 0.2, "stream": False, "messages": messages}
-    req = urllib.request.Request(URL + "/chat/completions", json.dumps(body).encode(),
-                                 {"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=600) as r:
-        return json.load(r)["choices"][0]["message"]["content"].strip()
-
-
-def chat(system, text, model, temperature=0.2, timeout=600):
-    """One chat request with thinking off. Used by eli12 and fixtext."""
-    body = {"model": model, "stream": False, "temperature": temperature,
-            "chat_template_kwargs": {"enable_thinking": False},
-            "messages": [{"role": "system", "content": system},
-                         {"role": "user", "content": text}]}
-    req = urllib.request.Request(URL + "/chat/completions", json.dumps(body).encode(),
-                                 {"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.load(r)["choices"][0]["message"]["content"].strip()
-
-def chat_stream(messages, model, temperature=0.5, timeout=600):
-    """Stream a chat reply (thinking off): yields text pieces as the model writes them."""
-    body = {"model": model, "stream": True, "temperature": temperature,
-            "chat_template_kwargs": {"enable_thinking": False}, "messages": messages}
-    req = urllib.request.Request(URL + "/chat/completions", json.dumps(body).encode(),
-                                 {"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        for line in r:
-            line = line.decode("utf-8", "replace").strip()
-            if not line.startswith("data:"):
-                continue
-            data = line[5:].strip()
-            if data == "[DONE]":
-                return
-            piece = json.loads(data)["choices"][0].get("delta", {}).get("content")
-            if piece:
-                yield piece
-
-def chunks(text):
-    buf = ""
-    for para in text.split("\n\n"):
-        if buf and len(buf) + len(para) > CHUNK:
-            yield buf
-            buf = ""
-        buf = f"{buf}\n\n{para}" if buf else para
-    if buf.strip():
-        yield buf
+        return llm.chat([{"role": "user", "content": f"Translate the following segment into "
+                          f"{TO}, without additional explanation.\n\n{text}"}], model)
+    return llm.complete(SYSTEM, text, model)
 
 
 def translate_long(text, out, progress=False):
-    parts = list(chunks(text))
+    parts = list(llm.chunks(text))
     for i, part in enumerate(parts, 1):
         if progress:
             print(f"\r[{i}/{len(parts)}]", end="", file=sys.stderr, flush=True)
@@ -107,44 +56,40 @@ def translate_long(text, out, progress=False):
         print(file=sys.stderr)
 
 
-def extract(path):
-    ext = os.path.splitext(path)[1].lower()
-    if ext == ".pdf":
-        text = subprocess.run(["pdftotext", "-layout", path, "-"], capture_output=True, text=True, check=True).stdout
-        if text.strip():
-            return text
-        sys.exit("no text layer in PDF (scanned?) - OCR it first, e.g. ocrmypdf -l ukr")
-    if ext in (".epub", ".docx", ".html", ".htm", ".odt"):
-        return subprocess.run(["pandoc", "-t", "plain", "--wrap=none", path], capture_output=True, text=True, check=True).stdout
-    with open(path, encoding="utf-8", errors="replace") as f:
-        return f.read()
-
-
-def popup(title, text):
-    subprocess.run(["wl-copy"], input=text, text=True)
-    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
-        f.write(text)
-    subprocess.run(["kdialog", "--title", title, "--textbox", f.name, "800", "500"])
-    os.unlink(f.name)
-
-
-def notify(msg, app="uktr"):
-    subprocess.run(["notify-send", "-a", app, "-t", "3000", app, msg])
-
-
-def gui(text, source):
+def translate_popup(text, source):
     if not text.strip():
-        notify(f"nothing to translate ({source} empty)")
-        return
-    notify(f"translating {len(text)} chars…")
-    try:
-        with tempfile.TemporaryFile("w+") as out:
-            translate_long(text, out)
-            out.seek(0)
-            popup(f"uktr → {TO}", out.read().strip())
-    except OSError as e:
-        notify(f"translation failed: {e}")
+        return llm.notify(f"nothing to translate ({source} is empty)", "uktr")
+    llm.notify(f"translating {len(text)} chars…", "uktr")
+    with tempfile.TemporaryFile("w+", encoding="utf-8") as out:
+        translate_long(text, out)
+        out.seek(0)
+        llm.popup(f"uktr → {TO}", out.read().strip())
 
+
+def translate_file(src, dst=None, notify=False):
+    dst = dst or f"{os.path.splitext(src)[0]}.{SUFFIX}.md"
+    text = llm.extract(src)
+    if notify:
+        llm.notify(f"translating {os.path.basename(src)}…", "uktr")
+    else:
+        print(f"{src} → {dst} ({len(text)} chars, model {MODEL})", file=sys.stderr)
+    with open(dst, "w", encoding="utf-8") as out:
+        translate_long(text, out, progress=not notify)
+    if notify:
+        llm.notify(f"done: {dst}", "uktr", 10000)
+
+
+def screen_text():
+    """Select a screen region with spectacle and OCR it with tesseract ("" if cancelled)."""
+    with tempfile.TemporaryDirectory() as d:
+        png = os.path.join(d, "shot.png")
+        subprocess.run(["spectacle", "-r", "-b", "-n", "-o", png])
+        if not os.path.exists(png):
+            return None
+        return llm.run(["tesseract", png, "-", "-l", conf.get("UKTR_OCR", "ukr+eng")], "OCR")
+
+
+# --- uktr listen ---
 
 RATE = 16000  # Whisper wants 16 kHz mono
 HALLUCINATIONS = ("thank you", "thanks for watching", "дякую за перегляд", "субтитри",
@@ -172,10 +117,10 @@ def transcribe(pcm, lang):
                     for k, v in fields.items())
     body += (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="a.wav"\r\n'
              "Content-Type: audio/wav\r\n\r\n").encode() + wav_bytes(pcm) + f"\r\n--{boundary}--\r\n".encode()
-    req = urllib.request.Request(conf.get("UKTR_ASR_URL", URL).rstrip("/") + "/audio/transcriptions", body,
-                                 {"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    req = urllib.request.Request(conf.get("UKTR_ASR_URL", llm.URL).rstrip("/") + "/audio/transcriptions",
+                                 body, {"Content-Type": f"multipart/form-data; boundary={boundary}"})
     with urllib.request.urlopen(req, timeout=120) as r:
-        return json.load(r)["text"].strip()
+        return json.load(r).get("text", "").strip()
 
 
 def rms(pcm):
@@ -204,14 +149,13 @@ def listen(argv):
             t, pcm = jobs.get()
             try:
                 src = transcribe(pcm, lang)
-                if not src or src.lower().strip(" .!…") in HALLUCINATIONS:
-                    continue
-                stamp = time.strftime("%H:%M:%S", time.localtime(t))
-                if show_orig:
-                    print(f"\033[2m{stamp}  {src}\033[0m", flush=True)
-                print(f"{stamp}  {translate(src, listen_model)}", flush=True)
-            except OSError as e:
-                print(f"[uktr] {e}", file=sys.stderr, flush=True)
+                if src and src.lower().strip(" .!…") not in HALLUCINATIONS:
+                    stamp = time.strftime("%H:%M:%S", time.localtime(t))
+                    if show_orig:
+                        print(f"\033[2m{stamp}  {src}\033[0m", flush=True)
+                    print(f"{stamp}  {translate(src, listen_model)}", flush=True)
+            except Exception as e:  # keep going: one bad chunk must not stop the subtitles
+                print(f"[uktr] {type(e).__name__}: {e}", file=sys.stderr, flush=True)
             if jobs.qsize() > 3:
                 print(f"[uktr] falling behind ({jobs.qsize()} chunks queued)", file=sys.stderr, flush=True)
 
@@ -242,30 +186,28 @@ def listen(argv):
 
 
 def main(argv):
-    if not argv:
-        translate_long(sys.stdin.read(), sys.stdout)
-    elif argv[0] == "clip":
-        gui(subprocess.run(["wl-paste", "--no-newline"], capture_output=True, text=True).stdout, "clipboard")
-    elif argv[0] == "shot":
-        with tempfile.TemporaryDirectory() as d:
-            png = os.path.join(d, "shot.png")
-            subprocess.run(["spectacle", "-r", "-b", "-n", "-o", png])
-            if not os.path.exists(png):
-                return
-            ocr = subprocess.run(["tesseract", png, "-", "-l", conf.get("UKTR_OCR", "ukr+eng")],
-                                 capture_output=True, text=True).stdout
-        gui(ocr, "OCR")
-    elif argv[0] == "listen":
-        listen(argv[1:])
-    elif argv[0] in ("-h", "--help"):
-        print(__doc__)
-    else:
-        src = argv[0]
-        dst = argv[2] if len(argv) > 2 and argv[1] == "-o" else os.path.splitext(src)[0] + ".en.md"
-        text = extract(src)
-        print(f"{src} → {dst} ({len(text)} chars, model {MODEL})", file=sys.stderr)
-        with open(dst, "w", encoding="utf-8") as out:
-            translate_long(text, out, progress=True)
+    if argv[:1] in (["-h"], ["--help"]):
+        return print(__doc__)
+    gui = argv[:1] in (["clip"], ["shot"], ["--notify"])
+    with llm.errors("uktr", gui):
+        if not argv:
+            translate_long(sys.stdin.read(), sys.stdout)
+        elif argv[0] == "clip":
+            translate_popup(llm.clipboard(), "clipboard")
+        elif argv[0] == "shot":
+            text = screen_text()
+            if text is not None:  # None: selection cancelled
+                translate_popup(text, "OCR")
+        elif argv[0] == "listen":
+            listen(argv[1:])
+        elif argv[0] == "--notify" and len(argv) == 2:
+            translate_file(argv[1], notify=True)
+        elif len(argv) == 1:
+            translate_file(argv[0])
+        elif len(argv) == 3 and argv[1] == "-o":
+            translate_file(argv[0], argv[2])
+        else:
+            sys.exit(__doc__)
 
 
 if __name__ == "__main__":

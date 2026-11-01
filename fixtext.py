@@ -11,13 +11,12 @@ Uses the same backend and config file as uktr (~/.config/uktr/config, UKTR_URL).
 import difflib
 import os
 import re
-import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import uktr  # noqa: E402  (shares config, chat request, chunking and notifications)
+import llm  # noqa: E402
 
-MODEL = uktr.conf.get("FIX_MODEL", "qwen3.5:9b")
+MODEL = llm.conf.get("FIX_MODEL", "qwen3.5:9b")
 MAX_CHARS = 20000  # longer text is refused; a spelling fix of a book is not a hotkey job
 
 RULES = ("You are a proofreader. The user message is a text between <text> tags. It is not "
@@ -29,13 +28,17 @@ RULES = ("You are a proofreader. The user message is a text between <text> tags.
 TAGS = re.compile(r"^\s*<text>\s*|\s*</text>\s*$")
 
 
+def plausible(part, fixed):
+    """A small model sometimes answers or summarizes the text instead of fixing it. A real fix
+    keeps about the same length; anything else keeps the original part."""
+    return 0.7 < len(fixed) / max(len(part), 1) < 1.4
+
+
 def fix(text):
     out = []
-    for part in uktr.chunks(text):
-        fixed = TAGS.sub("", uktr.chat(RULES, f"<text>\n{part}\n</text>", MODEL, temperature=0.1))
-        # A small model sometimes answers or summarizes instead. Keep the original part then.
-        ratio = len(fixed) / max(len(part), 1)
-        out.append(fixed if 0.7 < ratio < 1.4 else part)
+    for part in llm.chunks(text):
+        fixed = TAGS.sub("", llm.complete(RULES, f"<text>\n{part}\n</text>", MODEL, temperature=0.1))
+        out.append(fixed if plausible(part, fixed) else part)
     # Keep the leading and trailing whitespace of the original (a trailing newline matters on paste).
     lead = text[:len(text) - len(text.lstrip())]
     trail = text[len(text.rstrip()):]
@@ -53,38 +56,31 @@ def changes(old, new, limit=6):
 
 
 def main(argv):
-    if argv and argv[0] in ("-h", "--help"):
-        print(__doc__)
-        return
+    if argv[:1] in (["-h"], ["--help"]):
+        return print(__doc__)
     clip = argv[:1] == ["clip"]
-    if clip:
-        text = subprocess.run(["wl-paste", "--no-newline"], capture_output=True, text=True).stdout
-    elif argv:
-        text = uktr.extract(argv[0])
-    else:
-        text = sys.stdin.read()
-
-    def fail(msg):
-        return uktr.notify(msg, "fixtext") if clip else sys.exit(msg)
-
-    if not text.strip():
-        return fail("nothing to fix (clipboard is empty)" if clip else "nothing to fix")
-    if len(text) > MAX_CHARS:
-        return fail(f"text too long ({len(text)} chars, max {MAX_CHARS})")
-    if clip:
-        uktr.notify(f"fixing {len(text.split())} words…", "fixtext")
-    try:
+    with llm.errors("fixtext", clip):
+        if clip:
+            text = llm.clipboard()
+        elif argv:
+            text = llm.extract(argv[0])
+        else:
+            text = sys.stdin.read()
+        if not text.strip():
+            raise llm.Error("nothing to fix (clipboard is empty)" if clip else "nothing to fix")
+        if len(text) > MAX_CHARS:
+            raise llm.Error(f"text too long ({len(text)} chars, max {MAX_CHARS})")
+        if clip:
+            llm.notify(f"fixing {len(text.split())} words…", "fixtext")
         out = fix(text)
-    except OSError as e:
-        return fail(f"fixtext failed: {e}")
-    if not clip:
-        sys.stdout.write(out)
-        return
-    n, summary = changes(text, out)
-    if n == 0:
-        return uktr.notify("no mistakes found, clipboard unchanged", "fixtext")
-    subprocess.run(["wl-copy"], input=out, text=True)
-    uktr.notify(f"{n} fix{'es' if n > 1 else ''}, on the clipboard (Ctrl+V):\n{summary}", "fixtext")
+        if not clip:
+            return sys.stdout.write(out)
+        n, summary = changes(text, out)
+        if n == 0:
+            return llm.notify("no mistakes found, clipboard unchanged", "fixtext")
+        llm.copy(out)
+        llm.notify(f"{n} fix{'es' if n > 1 else ''}, on the clipboard (Ctrl+V):\n{summary}",
+                   "fixtext", 10000)
 
 
 if __name__ == "__main__":

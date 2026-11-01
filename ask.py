@@ -4,7 +4,7 @@
   ask --popup           chat window (KDE hotkey Meta+Shift+Q or Copilot; needs PySide6)
   ask --screen          screenshot of the active window -> chat window that explains it
                         (Ctrl+Alt+Copilot); ask follow-up questions about it
-  ask                   chat in the terminal (empty line or Ctrl+D quits, /new starts a new chat)
+  ask                   chat in the terminal (/new starts a new chat, Ctrl+D or /quit quits)
   ask --list            saved chats, newest first
   ask --resume [N]      continue saved chat N in the terminal (default 1, the newest)
   ask QUESTION...       one question on the command line -> stdout
@@ -34,15 +34,15 @@ import tempfile
 import threading
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import uktr  # noqa: E402  (shares config and the streaming chat request)
+import llm  # noqa: E402
 
-MODEL = uktr.conf.get("ASK_MODEL", "qwen3.5:9b")
+MODEL = llm.conf.get("ASK_MODEL", "qwen3.5:9b")
 HISTORY_CHARS = 24000  # older turns are dropped so the prompt stays inside the context window
-SAVE = uktr.conf.get("ASK_HISTORY", "1") != "0"
+SAVE = llm.conf.get("ASK_HISTORY", "1") != "0"
 SAVE_DIR = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
                         "uktr", "ask")
 
-SCREEN_PROMPT = uktr.conf.get("ASK_SCREEN_PROMPT", (
+SCREEN_PROMPT = llm.conf.get("ASK_SCREEN_PROMPT", (
     "What is on this screen? Say briefly what it shows and what matters. If there is an error, "
     "a question or a choice to make, explain it and say what to do."))
 IMAGE_SIZE = 1280  # longest side in pixels; bigger is slower and does not read better
@@ -107,7 +107,11 @@ class Chat:
         if not self.path:
             os.makedirs(SAVE_DIR, exist_ok=True)
             name = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
-            self.path = os.path.join(SAVE_DIR, name + ".json")
+            path, n = os.path.join(SAVE_DIR, name + ".json"), 1
+            while os.path.exists(path):  # two chats started in the same second
+                n += 1
+                path = os.path.join(SAVE_DIR, f"{name}-{n}.json")
+            self.path = path
         tmp = self.path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"model": MODEL, "title": self.title, "turns": self.turns}, f,
@@ -130,7 +134,7 @@ class Chat:
         self.turns.append({"role": "user", "content": question})
         answer = ""
         try:
-            for piece in uktr.chat_stream(self.messages(), MODEL):
+            for piece in llm.chat_stream(self.messages(), MODEL):
                 answer += piece
                 yield piece
         finally:
@@ -177,6 +181,9 @@ def title_of(question):
     return line if len(line) <= 60 else line[:59] + "…"
 
 
+_seen = {}  # path -> (mtime, title, messages): read each saved chat only when it changed
+
+
 def saved_chats():
     """[(path, title, modified datetime, messages)], newest first. Broken files are skipped."""
     found = []
@@ -187,13 +194,21 @@ def saved_chats():
     for name in names:
         path = os.path.join(SAVE_DIR, name)
         try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-            when = datetime.datetime.fromtimestamp(os.path.getmtime(path))
-            found.append((path, data.get("title") or name, when, len(data.get("turns", []))))
+            mtime = os.stat(path).st_mtime
+            if _seen.get(path, (None,))[0] != mtime:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+                _seen[path] = (mtime, data.get("title") or name, len(data.get("turns", [])))
+            _, title, n = _seen[path]
+            found.append((path, title, datetime.datetime.fromtimestamp(mtime), n))
         except (OSError, ValueError):
             continue
     return sorted(found, key=lambda c: c[2], reverse=True)
+
+
+def questions(messages):
+    n = messages // 2
+    return f"{n} question{'s' if n != 1 else ''}"
 
 
 def when_text(when):
@@ -208,7 +223,7 @@ def when_text(when):
 def terminal(chat=None):
     import readline  # noqa: F401  (line editing and arrow-up history for input())
     chat = chat or Chat(save=True)
-    print(f"ask {MODEL}: empty line or Ctrl+D quits, /new starts a new chat.", file=sys.stderr)
+    print(f"ask {MODEL}: /new starts a new chat, Ctrl+D or /quit quits.", file=sys.stderr)
     for t in chat.turns:  # a resumed chat: show it first
         if t["role"] == "user":
             shots = " [screenshot]" * len(images_of(t["content"]))
@@ -222,6 +237,8 @@ def terminal(chat=None):
             print()
             return
         if not question:
+            continue
+        if question in ("/quit", "/exit"):
             return
         if question == "/new":
             chat = Chat(save=True)
@@ -242,7 +259,7 @@ def terminal(chat=None):
 
 def window(first=None):
     try:
-        from PySide6.QtCore import QObject, Qt, Signal
+        from PySide6.QtCore import QObject, Qt, QTimer, Signal
         from PySide6.QtGui import QImage, QKeySequence, QShortcut, QTextDocument
         from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QListWidget,
                                        QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit,
@@ -290,7 +307,7 @@ def window(first=None):
         def __init__(self, first=None):
             super().__init__()
             self.chat, self.busy, self.stop = Chat(save=True), False, threading.Event()
-            self.answer, self.error = "", ""
+            self.answer, self.error, self.render_due = "", "", False
             self.setWindowTitle(f"ask — {MODEL}")
             self.resize(1000, 680)
 
@@ -349,7 +366,7 @@ def window(first=None):
         def fill_list(self):
             self.list.clear()
             for path, title, when, n in saved_chats():
-                item = QListWidgetItem(f"{title}\n{when_text(when)} · {n // 2} question{'s' if n // 2 != 1 else ''}")
+                item = QListWidgetItem(f"{title}\n{when_text(when)} · {questions(n)}")
                 item.setData(Qt.UserRole, path)
                 item.setToolTip(title)
                 self.list.addItem(item)
@@ -372,7 +389,7 @@ def window(first=None):
                 return
             self.error = ""
             self.status.setText("")
-            self.render()
+            self.render(follow=True)
             self.input.setFocus()
 
         def list_menu(self, pos):
@@ -399,7 +416,12 @@ def window(first=None):
                 self.render()
             self.fill_list()
 
-        def render(self):
+        def render(self, follow=False):
+            """Show the chat. Stay at the bottom while an answer streams in, unless you
+            scrolled up to read; follow=True always jumps to the end."""
+            self.render_due = False
+            bar = self.view.verticalScrollBar()
+            at_end, pos = bar.value() >= bar.maximum() - 8, bar.value()
             turns = list(self.chat.turns)
             if self.busy and (not turns or turns[-1]["role"] == "user"):
                 turns.append({"role": "assistant", "content": self.answer + " ▍"})
@@ -420,8 +442,7 @@ def window(first=None):
                              + ("Chats are saved; open an old one on the left.*" if SAVE else
                                 "The conversation is kept until you press New chat.*"))
             self.view.setMarkdown("\n\n---\n\n".join(parts))
-            bar = self.view.verticalScrollBar()
-            bar.setValue(bar.maximum())
+            bar.setValue(bar.maximum() if follow or at_end else pos)
 
         def send(self, question=None):
             """Send the input box, or a given question (text, or a list with a screenshot)."""
@@ -437,7 +458,7 @@ def window(first=None):
             self.button.setText("Stop")
             self.status.setText("thinking…")
             threading.Thread(target=self.work, args=(question,), daemon=True).start()
-            self.render()
+            self.render(follow=True)
 
         def work(self, question):
             answer, result = self.chat.ask(question), ""
@@ -458,7 +479,9 @@ def window(first=None):
         def on_piece(self, piece):
             self.answer += piece
             self.status.setText(f"writing… {len(self.answer.split())} words")
-            self.render()
+            if not self.render_due:  # redraw at most every 100 ms, not on every token
+                self.render_due = True
+                QTimer.singleShot(100, self.render)
 
         def on_done(self, result):
             self.busy = False
@@ -482,8 +505,7 @@ def window(first=None):
             last = next((t["content"] for t in reversed(self.chat.turns)
                          if t["role"] == "assistant"), "")
             if last:
-                # wl-copy keeps the text on the clipboard after this window closes.
-                subprocess.run(["wl-copy"], input=last, text=True)
+                llm.copy(last)  # wl-copy keeps it on the clipboard after this window closes
                 self.status.setText("answer copied")
 
         def escape(self):
@@ -503,36 +525,39 @@ def window(first=None):
 
 
 def main(argv):
-    if argv and argv[0] in ("-h", "--help"):
-        print(__doc__)
-        return
+    if argv[:1] in (["-h"], ["--help"]):
+        return print(__doc__)
     if argv == ["--popup"]:
         return window()
     if argv == ["--screen"]:
         # Take the screenshot before our window opens and becomes the active window.
-        shot = screenshot()
-        if not shot:
-            return uktr.notify("screenshot failed", "ask")
+        with llm.errors("ask", gui=True):
+            shot = screenshot()
+            if not shot:
+                raise llm.Error("screenshot failed (is spectacle installed?)")
         return window([{"type": "text", "text": SCREEN_PROMPT},
                        {"type": "image_url", "image_url": {"url": shot}}])
     if argv == ["--list"]:
         for i, (path, title, when, n) in enumerate(saved_chats(), 1):
-            print(f"{i:3}  {when:%Y-%m-%d %H:%M}  {title}  ({n // 2} question{'s' if n // 2 != 1 else ''})")
+            print(f"{i:3}  {when:%Y-%m-%d %H:%M}  {title}  ({questions(n)})")
         return
     if argv[:1] == ["--resume"]:
         chats = saved_chats()
-        n = int(argv[1]) if len(argv) > 1 and argv[1].isdigit() else 1
+        if len(argv) > 1 and not argv[1].isdigit():
+            sys.exit("usage: ask --resume [N]  (N from ask --list)")
+        n = int(argv[1]) if len(argv) > 1 else 1
         if not 1 <= n <= len(chats):
             sys.exit(f"no saved chat {n} (see ask --list)")
         return terminal(Chat.load(chats[n - 1][0]))
     if not argv and sys.stdin.isatty():
         return terminal()
-    question = " ".join(argv) or sys.stdin.read()
-    if not question.strip():
-        sys.exit("no question")
-    for piece in Chat().ask(question):
-        print(piece, end="", flush=True)
-    print()
+    with llm.errors("ask", gui=False):
+        question = " ".join(argv) or sys.stdin.read()
+        if not question.strip():
+            raise llm.Error("no question")
+        for piece in Chat().ask(question):
+            print(piece, end="", flush=True)
+        print()
 
 
 if __name__ == "__main__":
