@@ -44,7 +44,7 @@ konsole -e uktr listen --orig
 ## eli12: explain it like I'm 12
 
 `eli12` is a second tool in this repository. It reads a text (a long boring email, a
-README, an article, a PDF) and says in at most 3 short sentences what it is about and what
+README, an article, a PDF) and says in at most 5 short sentences what it is about and what
 matters most, in plain words.
 
 If the text asks you to do something, as an email or letter does, `eli12` ends with a line
@@ -180,6 +180,7 @@ override the file. See `config.example`.
 | `UKTR_LISTEN_MAX` | `12` | longest audio chunk, in seconds |
 | `UKTR_SILENCE` | `300` | int16 RMS level that counts as quiet |
 | `ELI12_MODEL` | `qwen3.5:9b` | chat model for `eli12` |
+| `ELI12_SENTENCES` | `5` | longest explanation for `eli12`, in sentences |
 | `ELI12_LANG` | `nl` | language for `eli12`: `nl`, `en` or `both` |
 
 Example, one-off Russian to Dutch:
