@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """ask: chat with the local LLM. The conversation keeps its history until you start a new one.
 
-  ask --popup           chat window (KDE hotkey Meta+Shift+Q; needs PySide6)
+  ask --popup           chat window (KDE hotkey Meta+Shift+Q or Copilot; needs PySide6)
+  ask --screen          screenshot of the active window -> chat window that explains it
+                        (Ctrl+Alt+Copilot); ask follow-up questions about it
   ask                   chat in the terminal (empty line or Ctrl+D quits, /new starts a new chat)
   ask --list            saved chats, newest first
   ask --resume [N]      continue saved chat N in the terminal (default 1, the newest)
@@ -18,13 +20,17 @@ Chats from the window and the terminal chat are saved after every answer, as JSO
 Uses the same backend and config file as uktr (~/.config/uktr/config, UKTR_URL).
   ASK_MODEL     default qwen3.5:9b (any chat model)
   ASK_HISTORY   default 1; 0 = do not save chats
+  ASK_SCREEN_PROMPT  the first question for --screen
 """
+import base64
 import datetime
 import functools
 import json
 import os
+import re
 import subprocess
 import sys
+import tempfile
 import threading
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
@@ -35,6 +41,12 @@ HISTORY_CHARS = 24000  # older turns are dropped so the prompt stays inside the 
 SAVE = uktr.conf.get("ASK_HISTORY", "1") != "0"
 SAVE_DIR = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
                         "uktr", "ask")
+
+SCREEN_PROMPT = uktr.conf.get("ASK_SCREEN_PROMPT", (
+    "What is on this screen? Say briefly what it shows and what matters. If there is an error, "
+    "a question or a choice to make, explain it and say what to do."))
+IMAGE_SIZE = 1280  # longest side in pixels; bigger is slower and does not read better
+IMAGE_CHARS = 2000  # what an image counts for in HISTORY_CHARS
 
 RULES = ("You are a helpful assistant on the user's computer: {system}. Today is {today}. "
          "Answer in the language of the user's last message. Be short and concrete: a direct "
@@ -83,6 +95,10 @@ class Chat:
     @property
     def title(self):
         first = next((t["content"] for t in self.turns if t["role"] == "user"), "")
+        if images_of(first):
+            # All screenshot chats start with the same question; the answer says what it was.
+            answer = next((t["content"] for t in self.turns if t["role"] == "assistant"), "")
+            return "📷 " + title_of(re.sub(r"[*#`>_]", "", answer) or "screenshot")
         return title_of(first)
 
     def write(self):
@@ -102,7 +118,7 @@ class Chat:
         today = datetime.date.today().strftime("%A %d %B %Y")
         keep, size = [], 0
         for turn in reversed(self.turns):
-            size += len(turn["content"])
+            size += len(text_of(turn["content"])) + IMAGE_CHARS * len(images_of(turn["content"]))
             if keep and size > HISTORY_CHARS:
                 break
             keep.insert(0, turn)
@@ -122,7 +138,41 @@ class Chat:
             self.write()
 
 
+def text_of(content):
+    """The text of a message. Content is a string, or a list of parts with a screenshot."""
+    if isinstance(content, str):
+        return content
+    return "\n".join(p["text"] for p in content if p.get("type") == "text")
+
+
+def images_of(content):
+    """The images of a message, as data URLs."""
+    if isinstance(content, str):
+        return []
+    return [p["image_url"]["url"] for p in content if p.get("type") == "image_url"]
+
+
+def screenshot():
+    """The active window as a JPEG data URL (longest side IMAGE_SIZE), or None if it failed."""
+    from PySide6.QtCore import QBuffer, Qt
+    from PySide6.QtGui import QImage
+    with tempfile.TemporaryDirectory() as d:
+        png = os.path.join(d, "window.png")
+        subprocess.run(["spectacle", "--activewindow", "--background", "--nonotify", "-o", png],
+                       capture_output=True)
+        image = QImage(png)
+    if image.isNull():
+        return None
+    if max(image.width(), image.height()) > IMAGE_SIZE:
+        image = image.scaled(IMAGE_SIZE, IMAGE_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    buf = QBuffer()
+    buf.open(QBuffer.WriteOnly)
+    image.save(buf, "JPG", 85)
+    return "data:image/jpeg;base64," + base64.b64encode(bytes(buf.data())).decode()
+
+
 def title_of(question):
+    question = text_of(question)
     line = question.strip().splitlines()[0] if question.strip() else "(empty)"
     return line if len(line) <= 60 else line[:59] + "…"
 
@@ -160,7 +210,11 @@ def terminal(chat=None):
     chat = chat or Chat(save=True)
     print(f"ask {MODEL}: empty line or Ctrl+D quits, /new starts a new chat.", file=sys.stderr)
     for t in chat.turns:  # a resumed chat: show it first
-        print(f"\n> {t['content']}" if t["role"] == "user" else t["content"])
+        if t["role"] == "user":
+            shots = " [screenshot]" * len(images_of(t["content"]))
+            print(f"\n> {text_of(t['content'])}{shots}")
+        else:
+            print(t["content"])
     while True:
         try:
             question = input("\n> ").strip()
@@ -186,10 +240,10 @@ def terminal(chat=None):
         print()
 
 
-def window():
+def window(first=None):
     try:
         from PySide6.QtCore import QObject, Qt, Signal
-        from PySide6.QtGui import QKeySequence, QShortcut
+        from PySide6.QtGui import QImage, QKeySequence, QShortcut, QTextDocument
         from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QListWidget,
                                        QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit,
                                        QPushButton, QSplitter, QTextBrowser, QVBoxLayout,
@@ -203,6 +257,24 @@ def window():
         piece = Signal(str)
         done = Signal(str)  # "" when complete, "stopped", or an error text
 
+    class View(QTextBrowser):
+        """Shows screenshots in the chat as thumbnails: markdown ![](shot:N) -> self.images."""
+
+        def __init__(self):
+            super().__init__(openExternalLinks=True)
+            self.images = {}
+
+        def loadResource(self, kind, url):
+            if kind == QTextDocument.ImageResource and url.toString() in self.images:
+                return self.images[url.toString()]
+            return super().loadResource(kind, url)
+
+        def add_image(self, data_url):
+            name = f"shot:{len(self.images)}"
+            image = QImage.fromData(base64.b64decode(data_url.split(",", 1)[1]))
+            self.images[name] = image.scaled(480, 480, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            return name
+
     class Input(QPlainTextEdit):
         def __init__(self, send):
             super().__init__()
@@ -215,7 +287,7 @@ def window():
                 super().keyPressEvent(e)
 
     class Window(QWidget):
-        def __init__(self):
+        def __init__(self, first=None):
             super().__init__()
             self.chat, self.busy, self.stop = Chat(save=True), False, threading.Event()
             self.answer, self.error = "", ""
@@ -230,12 +302,12 @@ def window():
             self.list.customContextMenuRequested.connect(self.list_menu)
             self.list.setVisible(SAVE)
 
-            self.view = QTextBrowser(openExternalLinks=True)
+            self.view = View()
             self.input = Input(self.send)
             self.input.setPlaceholderText("Ask something… (Enter sends, Shift+Enter is a new line)")
             self.input.setFixedHeight(90)
             self.status = QLabel()
-            self.button = QPushButton("Send", clicked=self.send)
+            self.button = QPushButton("Send", clicked=lambda: self.send())
             new = QPushButton("New chat", clicked=self.new_chat)
             copy = QPushButton("Copy answer", clicked=self.copy_answer)
             saved = QPushButton("Saved chats", clicked=self.toggle_list, enabled=SAVE)
@@ -271,6 +343,8 @@ def window():
             self.fill_list()
             self.render()
             self.input.setFocus()
+            if first:
+                self.send(first)
 
         def fill_list(self):
             self.list.clear()
@@ -330,10 +404,13 @@ def window():
             if self.busy and (not turns or turns[-1]["role"] == "user"):
                 turns.append({"role": "assistant", "content": self.answer + " ▍"})
             parts = []
+            self.view.images.clear()
             for t in turns:
                 if t["role"] == "user":
-                    quoted = "\n".join("> " + line for line in t["content"].splitlines())
-                    parts.append(f"**You**\n\n{quoted}")
+                    quoted = "\n".join("> " + line for line in text_of(t["content"]).splitlines())
+                    shots = "".join(f"\n\n![screenshot]({self.view.add_image(url)})"
+                                    for url in images_of(t["content"]))
+                    parts.append(f"**You**\n\n{quoted}{shots}")
                 else:
                     parts.append(t["content"])
             if self.error:
@@ -346,13 +423,15 @@ def window():
             bar = self.view.verticalScrollBar()
             bar.setValue(bar.maximum())
 
-        def send(self):
+        def send(self, question=None):
+            """Send the input box, or a given question (text, or a list with a screenshot)."""
             if self.busy:
                 return self.stop.set()
-            question = self.input.toPlainText().strip()
             if not question:
-                return
-            self.input.clear()
+                question = self.input.toPlainText().strip()
+                if not question:
+                    return
+                self.input.clear()
             self.busy, self.answer, self.error = True, "", ""
             self.stop.clear()
             self.button.setText("Stop")
@@ -416,7 +495,7 @@ def window():
     app = QApplication(sys.argv[:1])
     app.setApplicationName("ask")
     app.setDesktopFileName("ask")
-    w = Window()
+    w = Window(first)
     w.show()
     w.raise_()
     w.activateWindow()
@@ -429,6 +508,13 @@ def main(argv):
         return
     if argv == ["--popup"]:
         return window()
+    if argv == ["--screen"]:
+        # Take the screenshot before our window opens and becomes the active window.
+        shot = screenshot()
+        if not shot:
+            return uktr.notify("screenshot failed", "ask")
+        return window([{"type": "text", "text": SCREEN_PROMPT},
+                       {"type": "image_url", "image_url": {"url": shot}}])
     if argv == ["--list"]:
         for i, (path, title, when, n) in enumerate(saved_chats(), 1):
             print(f"{i:3}  {when:%Y-%m-%d %H:%M}  {title}  ({n // 2} question{'s' if n // 2 != 1 else ''})")

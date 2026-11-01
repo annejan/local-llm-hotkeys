@@ -126,11 +126,22 @@ the language of your message and knows today's date, the distribution and the de
 | Command | Input | Output |
 |---|---|---|
 | `ask --popup` | chat window | chat window |
+| `ask --screen` | screenshot of the active window | chat window |
 | `ask` | chat in the terminal (`/new` starts a new chat, empty line quits) | terminal |
 | `ask --list` | saved chats, newest first | stdout |
 | `ask --resume [N]` | continue saved chat N (default 1, the newest) | terminal |
 | `ask QUESTION...` | command line | stdout |
 | `ask < question` | stdin | stdout |
+
+### Explain the active window
+
+Ctrl+Alt+Copilot (`ask --screen`) takes a screenshot of the active window and opens the chat
+with it. The model says what is on the screen, and explains an error, a question or a choice
+if there is one. Then ask follow-up questions about it ("what does this setting do?").
+
+`qwen3.5:9b` reads images, so this is the same model as the chat: about 8 s for the first
+answer on the NPU. The screenshot is scaled to 1280 pixels and saved with the chat. Set
+`ASK_SCREEN_PROMPT` to change the first question (for example, to get answers in Dutch).
 
 ### Saved chats
 
@@ -149,7 +160,7 @@ oldest messages are dropped. A 9B model makes mistakes, so check facts that matt
 - Python 3.9+
 - A server with an OpenAI-compatible API: FastFlowLM (NPU) or ollama (GPU/CPU)
 - `clip`: `wl-clipboard`, `kdialog`, `notify-send`
-- `ask --popup`: PySide6
+- `ask --popup`: PySide6; `ask --screen` also needs `spectacle`
 - `shot`: `spectacle`, `tesseract` with Ukrainian data (`tesseract-ocr-traineddata-ukr` on openSUSE)
 - `FILE`: `pdftotext` (poppler) for PDF, `pandoc` for epub/docx/odt/html
 - `listen`: `parec` (pipewire-pulse or PulseAudio), and a server with Whisper
@@ -182,6 +193,7 @@ chmod +x ~/.local/share/kio/servicemenus/uktr.desktop
 - Meta+Shift+F: fix spelling of the clipboard with fixtext
 - Meta+Shift+Q or the Copilot key: chat with ask
 - Alt+Copilot (or AltGr+Copilot): translate the clipboard to Dutch
+- Ctrl+Alt+Copilot: explain the active window (screenshot) with ask
 - Dolphin right-click on a document: "Translate to English (uktr)" and "Explain like I'm 12 (eli12)"
 
 The shortcuts come from `X-KDE-Shortcuts` in the `.desktop` files. After `kbuildsycoca6`,
@@ -192,8 +204,8 @@ The Copilot key (on newer laptops, such as the ThinkPad T14 Gen 6) sends Meta+Sh
 Depending on the keyboard layout, KDE sees it as "Meta+Shift+F23" or as
 "Meta+Shift+Touchpad Off", so the `.desktop` files list both names.
 Ctrl and Alt are free to add, so there are four combinations: Copilot (ask), Ctrl+Copilot
-(eli12), Alt+Copilot (translate to Dutch) and Ctrl+Alt+Copilot (still free). AltGr works as
-Alt here.
+(eli12), Alt+Copilot (translate to Dutch) and Ctrl+Alt+Copilot (explain the active window).
+AltGr works as Alt here.
 
 ## Backend: FastFlowLM on the NPU
 
@@ -267,6 +279,7 @@ override the file. See `config.example`.
 | `FIX_MODEL` | `qwen3.5:9b` | chat model for `fixtext` |
 | `ASK_MODEL` | `qwen3.5:9b` | chat model for `ask` |
 | `ASK_HISTORY` | `1` | `0`: do not save `ask` chats |
+| `ASK_SCREEN_PROMPT` | (English) | first question for `ask --screen` |
 
 Example, one-off Russian to Dutch:
 
