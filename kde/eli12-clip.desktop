@@ -5,4 +5,4 @@ Comment=Explain the copied text (an email, a README) in a few simple sentences
 Exec=eli12 clip
 Icon=help-about
 Categories=Utility;
-X-KDE-Shortcuts=Meta+Shift+E
+X-KDE-Shortcuts=Meta+Shift+E,Meta+Shift+Touchpad Off
