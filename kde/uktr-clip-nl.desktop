@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=uktr: translate clipboard to Dutch
+Comment=Translate clipboard text (any language) to Dutch with a local LLM
+Exec=env UKTR_TO=Dutch uktr clip
+Icon=preferences-desktop-locale
+Categories=Utility;
+X-KDE-Shortcuts=Meta+Alt+Shift+Touchpad Off

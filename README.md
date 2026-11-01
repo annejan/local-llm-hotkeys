@@ -169,11 +169,10 @@ mkdir -p ~/.config/uktr && cp config.example ~/.config/uktr/config
 KDE integration (optional):
 
 ```sh
-cp kde/uktr-clip.desktop kde/uktr-shot.desktop kde/eli12-clip.desktop \
-   kde/fixtext-clip.desktop kde/ask.desktop ~/.local/share/applications/
+cp kde/*.desktop ~/.local/share/applications/
 kbuildsycoca6
 mkdir -p ~/.local/share/kio/servicemenus
-cp kde/uktr-servicemenu.desktop ~/.local/share/kio/servicemenus/uktr.desktop
+cp kde/servicemenu/uktr.desktop ~/.local/share/kio/servicemenus/
 chmod +x ~/.local/share/kio/servicemenus/uktr.desktop
 ```
 
@@ -182,6 +181,7 @@ chmod +x ~/.local/share/kio/servicemenus/uktr.desktop
 - Meta+Shift+E or Ctrl+Copilot: explain the clipboard with eli12
 - Meta+Shift+F: fix spelling of the clipboard with fixtext
 - Meta+Shift+Q or the Copilot key: chat with ask
+- Alt+Copilot (or AltGr+Copilot): translate the clipboard to Dutch
 - Dolphin right-click on a document: "Translate to English (uktr)" and "Explain like I'm 12 (eli12)"
 
 The shortcuts come from `X-KDE-Shortcuts` in the `.desktop` files. After `kbuildsycoca6`,
@@ -190,8 +190,9 @@ KDE (Plasma 6) registers them at once; it does not write default shortcuts to
 
 The Copilot key (on newer laptops, such as the ThinkPad T14 Gen 6) sends Meta+Shift+F23.
 KDE calls that "Meta+Shift+Touchpad Off", so that is the name in the `.desktop` files.
-Ctrl and Alt are still free, so there are four combinations: Copilot (ask), Ctrl+Copilot
-(eli12), Alt+Copilot and Ctrl+Alt+Copilot.
+Ctrl and Alt are free to add, so there are four combinations: Copilot (ask), Ctrl+Copilot
+(eli12), Alt+Copilot (translate to Dutch) and Ctrl+Alt+Copilot (still free). AltGr works as
+Alt here.
 
 ## Backend: FastFlowLM on the NPU
 
