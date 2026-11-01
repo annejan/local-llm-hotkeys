@@ -34,6 +34,37 @@ conf = read_config()
 URL = conf.get("UKTR_URL", "http://localhost:52625/v1").rstrip("/")  # FastFlowLM on the NPU
 
 
+LANGUAGES = {"en": "English", "nl": "Dutch", "de": "German", "fr": "French", "es": "Spanish",
+             "it": "Italian", "pt": "Portuguese", "pl": "Polish", "uk": "Ukrainian", "ru": "Russian",
+             "sv": "Swedish", "da": "Danish", "nb": "Norwegian", "fi": "Finnish", "cs": "Czech",
+             "tr": "Turkish", "el": "Greek", "ja": "Japanese", "zh": "Chinese", "ko": "Korean"}
+
+
+def parse_language(value):
+    """'nl', 'nl_NL.UTF-8' or 'Dutch' -> ('nl', 'Dutch'). An unknown name is kept as it is."""
+    value = value.strip()
+    code = value.split(".")[0].split("_")[0].split("-")[0].lower()
+    if code in LANGUAGES:
+        return code, LANGUAGES[code]
+    for c, name in LANGUAGES.items():
+        if name.lower() == value.lower():
+            return c, name
+    return value.lower().replace(" ", "-"), value
+
+
+def language(environ=None):
+    """Your language: UKTR_LANGUAGE, else the language of the desktop (LANGUAGE, LC_ALL,
+    LC_MESSAGES, LANG, in that order). Translations and explanations are written in it."""
+    if conf.get("UKTR_LANGUAGE"):
+        return parse_language(conf["UKTR_LANGUAGE"])
+    environ = os.environ if environ is None else environ
+    for var in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
+        value = environ.get(var, "").split(":")[0]
+        if value and value not in ("C", "POSIX") and not value.startswith("C."):
+            return parse_language(value)
+    return "en", "English"
+
+
 class Error(Exception):
     """A problem to show to the user as it is, without a traceback."""
 

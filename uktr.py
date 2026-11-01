@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""uktr: rough Ukrainian (or any language) -> English translation with a local LLM.
+"""uktr: rough translation of Ukrainian (or any language) to your language with a local LLM.
 
   uktr                  stdin -> stdout
   uktr clip             clipboard -> popup window (result also copied to clipboard)
   uktr shot             select screen region -> OCR -> popup
   uktr listen [--orig]  live subtitles: system audio -> Whisper -> translation (terminal)
-  uktr FILE [-o OUT]    .pdf .epub .docx .odt .html .txt .md -> OUT (default FILE.en.md)
+  uktr FILE [-o OUT]    .pdf .epub .docx .odt .html .txt .md -> OUT (default FILE.<lang>.md)
   uktr --notify FILE    same, with notifications instead of terminal output (Dolphin menu)
 
 Backend is any OpenAI-compatible server, set in ~/.config/uktr/config or env:
   UKTR_URL    default http://localhost:52625/v1 (FastFlowLM on the NPU; ollama: :11434/v1)
   UKTR_MODEL  default translategemma:4b
-  UKTR_TO     default English
+  UKTR_TO     target language, default your language (UKTR_LANGUAGE, else the desktop's)
   UKTR_LISTEN_MODEL  translation model for `listen` (default UKTR_MODEL)
   UKTR_LANG   spoken language for `listen`, default uk ("" = Whisper guesses)
 """
@@ -27,10 +27,8 @@ import llm  # noqa: E402
 
 conf = llm.conf
 MODEL = conf.get("UKTR_MODEL", "translategemma:4b")
-TO = conf.get("UKTR_TO", "English")
-CODES = {"english": "en", "dutch": "nl", "german": "de", "french": "fr", "spanish": "es",
-         "italian": "it", "polish": "pl", "ukrainian": "uk", "russian": "ru"}
-SUFFIX = CODES.get(TO.lower(), TO.lower().replace(" ", "-"))  # FILE.en.md, FILE.nl.md, ...
+SUFFIX, TO = llm.parse_language(conf["UKTR_TO"]) if conf.get("UKTR_TO") else llm.language()
+# SUFFIX names the output file: FILE.nl.md for Dutch, FILE.en.md for English, ...
 
 SYSTEM = (f"You are a translator. Translate the user's text to {TO}. "
           "Output only the translation, keep paragraph breaks and markdown, add no comments.")

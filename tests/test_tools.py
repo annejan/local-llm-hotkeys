@@ -29,6 +29,31 @@ class Config(unittest.TestCase):
         self.assertEqual(llm.read_config("/nonexistent/config", {}), {})
 
 
+class Language(unittest.TestCase):
+    def test_parse(self):
+        self.assertEqual(llm.parse_language("nl"), ("nl", "Dutch"))
+        self.assertEqual(llm.parse_language("nl_NL.UTF-8"), ("nl", "Dutch"))
+        self.assertEqual(llm.parse_language("dutch"), ("nl", "Dutch"))
+        self.assertEqual(llm.parse_language("pt-BR"), ("pt", "Portuguese"))
+        self.assertEqual(llm.parse_language("Klingon"), ("klingon", "Klingon"))
+
+    def test_from_desktop(self):
+        real = llm.conf.pop("UKTR_LANGUAGE", None)
+        try:
+            # The interface language counts, not the formats (LC_TIME and so on).
+            self.assertEqual(llm.language({"LANG": "en_US.UTF-8", "LC_TIME": "nl_NL.UTF-8"}),
+                             ("en", "English"))
+            self.assertEqual(llm.language({"LANGUAGE": "de:en", "LANG": "en_US.UTF-8"}),
+                             ("de", "German"))
+            self.assertEqual(llm.language({"LANG": "C.UTF-8"}), ("en", "English"))
+            llm.conf["UKTR_LANGUAGE"] = "Dutch"
+            self.assertEqual(llm.language({"LANG": "en_US.UTF-8"}), ("nl", "Dutch"))
+        finally:
+            llm.conf.pop("UKTR_LANGUAGE", None)
+            if real is not None:
+                llm.conf["UKTR_LANGUAGE"] = real
+
+
 class Chunks(unittest.TestCase):
     def test_short_text_is_one_chunk(self):
         self.assertEqual(list(llm.chunks("a\n\nb")), ["a\n\nb"])

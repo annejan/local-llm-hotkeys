@@ -20,7 +20,7 @@ Chats from the window and the terminal chat are saved after every answer, as JSO
 Uses the same backend and config file as uktr (~/.config/uktr/config, UKTR_URL).
   ASK_MODEL     default qwen3.5:9b (any chat model)
   ASK_HISTORY   default 1; 0 = do not save chats
-  ASK_SCREEN_PROMPT  the first question for --screen
+  ASK_SCREEN_PROMPT  the first question for --screen ({language} = your language)
 """
 import base64
 import datetime
@@ -44,7 +44,7 @@ SAVE_DIR = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~
 
 SCREEN_PROMPT = llm.conf.get("ASK_SCREEN_PROMPT", (
     "What is on this screen? Say briefly what it shows and what matters. If there is an error, "
-    "a question or a choice to make, explain it and say what to do."))
+    "a question or a choice to make, explain it and say what to do. Answer in {language}."))
 IMAGE_SIZE = 1280  # longest side in pixels; bigger is slower and does not read better
 IMAGE_CHARS = 2000  # what an image counts for in HISTORY_CHARS
 
@@ -535,7 +535,8 @@ def main(argv):
             shot = screenshot()
             if not shot:
                 raise llm.Error("screenshot failed (is spectacle installed?)")
-        return window([{"type": "text", "text": SCREEN_PROMPT},
+        prompt = SCREEN_PROMPT.replace("{language}", llm.language()[1])
+        return window([{"type": "text", "text": prompt},
                        {"type": "image_url", "image_url": {"url": shot}}])
     if argv == ["--list"]:
         for i, (path, title, when, n) in enumerate(saved_chats(), 1):

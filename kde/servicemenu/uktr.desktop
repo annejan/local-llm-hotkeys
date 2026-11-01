@@ -5,7 +5,7 @@ Actions=uktr;eli12
 X-KDE-Priority=TopLevel
 
 [Desktop Action uktr]
-Name=Translate to English (uktr)
+Name=Translate (uktr)
 Icon=preferences-desktop-locale
 Exec=uktr --notify %f
 

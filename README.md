@@ -1,33 +1,56 @@
 # local-llm-hotkeys
 
-KDE hotkeys and Dolphin menu actions that send text (or a screenshot) to a local LLM.
-Four tools:
+**Your laptop has an AI key. Make it do something, on your own NPU.**
 
-- **uktr**: rough translation of Ukrainian (or any other language) to English or Dutch.
-- **eli12**: explains a text like you are 12.
-- **fixtext**: fixes spelling and grammar of the clipboard.
-- **ask**: a chat window for quick questions and follow-ups, also about a screenshot.
+New laptops have a Copilot key. On Linux it does nothing. This project gives it four jobs,
+and runs all of them on the AMD Ryzen AI NPU that is already in the laptop. There is no cloud,
+no account and no subscription. Nothing leaves your computer, it works offline, and the GPU
+stays free.
 
-All four talk to any OpenAI-compatible server. The default setup runs everything on the
-AMD Ryzen AI NPU with [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM), so the GPU
-stays free (for example for video playback). Nothing leaves your computer.
+| Press | You get |
+|---|---|
+| **Copilot** | a chat window. Ask anything, then ask follow-up questions. |
+| **Alt+Copilot** | the copied text, translated to your language. |
+| **Ctrl+Copilot** | the copied text explained in a few plain sentences, in your language, with a to-do list if it asks you to do something. |
+| **Ctrl+Alt+Copilot** | the window in front of you explained: "what is this error, and what do I do?" |
 
-Python standard library only, except the `ask` chat window, which uses PySide6.
+Some examples:
+
+- A letter from the tax office that you do not understand: copy it, press Ctrl+Copilot,
+  and read what it says and what you must do before which date.
+- A Ukrainian news article, a German invoice, a Japanese error message: copy it and press
+  Alt+Copilot.
+- An error dialog, a settings page, a chart: press Ctrl+Alt+Copilot, then ask "and how do I
+  fix that?"
+
+"Your language" is the language of your desktop, or the one you set (`UKTR_LANGUAGE`). No AI
+key? Every action also has a Meta+Shift shortcut.
 
 ## Hotkeys
 
 | Key | Action |
 |---|---|
-| Meta+Shift+T | translate the clipboard to English (`uktr clip`) |
-| Alt+Copilot (or AltGr+Copilot) | translate the clipboard to Dutch |
-| Meta+Shift+Y | translate a screen region (`uktr shot`) |
-| Meta+Shift+E or Ctrl+Copilot | explain the clipboard (`eli12 clip`) |
-| Meta+Shift+F | fix spelling of the clipboard (`fixtext clip`) |
-| Meta+Shift+Q or Copilot | chat (`ask --popup`) |
+| Copilot or Meta+Shift+Q | chat (`ask --popup`) |
+| Alt+Copilot or Meta+Shift+T | translate the clipboard to your language (`uktr clip`) |
+| Ctrl+Copilot or Meta+Shift+E | explain the clipboard (`eli12 clip`) |
 | Ctrl+Alt+Copilot | explain the active window (`ask --screen`) |
+| Meta+Shift+Y | translate a screen region (`uktr shot`) |
+| Meta+Shift+F | fix spelling and grammar of the clipboard (`fixtext clip`) |
 
-In Dolphin, right-click a document for "Translate to English (uktr)" and "Explain like I'm
-12 (eli12)". See [Install](#install) for the setup and [the Copilot key](#the-copilot-key).
+In Dolphin, right-click a document for "Translate (uktr)" and "Explain like I'm 12 (eli12)".
+AltGr works as Alt. See [Install](#install) for the setup and [the Copilot key](#the-copilot-key).
+
+### The four tools
+
+- **uktr**: rough translation of Ukrainian (or any other language) to your language: the
+  clipboard, a screen region, documents, or live subtitles for audio.
+- **eli12**: explains a text like you are 12.
+- **fixtext**: fixes spelling and grammar of the clipboard.
+- **ask**: a chat window for quick questions and follow-ups, also about a screenshot.
+
+All four talk to any OpenAI-compatible server. The default setup runs everything on the NPU
+with [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM); ollama on a GPU also works.
+Python standard library only, except the `ask` chat window, which uses PySide6.
 
 ## uktr: translate
 
@@ -39,12 +62,13 @@ rough, and some mistakes are funny.
 | `uktr` | stdin | stdout |
 | `uktr clip` | clipboard | popup window, result also copied to the clipboard |
 | `uktr shot` | screen region (spectacle + tesseract OCR) | popup window |
-| `uktr FILE [-o OUT]` | `.pdf` `.epub` `.docx` `.odt` `.html` `.txt` `.md` | `FILE.en.md` |
-| `uktr --notify FILE` | same, with notifications (Dolphin menu) | `FILE.en.md` |
+| `uktr FILE [-o OUT]` | `.pdf` `.epub` `.docx` `.odt` `.html` `.txt` `.md` | `FILE.nl.md` (your language) |
+| `uktr --notify FILE` | same, with notifications (Dolphin menu) | `FILE.nl.md` |
 | `uktr listen [--orig]` | system audio (live) | subtitles in the terminal |
 
-The target language is `UKTR_TO` (default English). The output file gets the language code:
-`FILE.nl.md` for Dutch. Long text goes to the model in chunks of about 1500 characters,
+The target language is your language (`UKTR_LANGUAGE`, else the desktop's). Set `UKTR_TO` to
+translate to another one. The output file gets the language code: `FILE.nl.md` for Dutch,
+`FILE.en.md` for English. Long text goes to the model in chunks of about 1500 characters,
 split at paragraph breaks.
 
 ### `uktr listen`
@@ -85,8 +109,8 @@ document.
 | `eli12 clip` | clipboard | popup window |
 | `eli12 --popup FILE` | file | popup window (Dolphin menu) |
 
-The default language is Dutch (`ELI12_LANG`). `-l en` gives English, and `-l both` gives Dutch
-followed by English.
+It writes in your language. `-l LANG` picks another one (`-l en`, `-l German`), and `-l both`
+gives your language followed by English.
 
 It uses a chat model (`ELI12_MODEL`, default `qwen3.5:9b`), because translation models cannot
 explain. A long README (about 2000 words) takes about 25 s on the NPU. Text after the first
@@ -161,7 +185,7 @@ if there is one. Then ask follow-up questions about it ("what does this setting 
 
 `qwen3.5:9b` reads images, so this is the same model as the chat: about 8 s for the first
 answer on the NPU. The screenshot is scaled to 1280 pixels and saved with the chat. Set
-`ASK_SCREEN_PROMPT` to change the first question (for example, to get answers in Dutch).
+`ASK_SCREEN_PROMPT` to change the first question. The answer is in your language.
 
 ### Saved chats
 
@@ -237,8 +261,8 @@ With an older keyboard map, KDE sees "Meta+Shift+Touchpad Off" instead; the `.de
 list both names, so the shortcuts work either way.
 
 Ctrl and Alt are free to add, so there are four combinations: Copilot (ask), Ctrl+Copilot
-(eli12), Alt+Copilot (translate to Dutch) and Ctrl+Alt+Copilot (explain the active window).
-AltGr works as Alt here.
+(eli12), Alt+Copilot (translate) and Ctrl+Alt+Copilot (explain the active window). AltGr
+works as Alt here.
 
 ## Backend: FastFlowLM on the NPU
 
@@ -304,7 +328,8 @@ with the same name override the file. See `config.example`.
 | `UKTR_URL` | `http://localhost:52625/v1` | OpenAI-compatible API base URL (all tools) |
 | `UKTR_MODEL` | `translategemma:4b` | translation model |
 | `UKTR_LISTEN_MODEL` | `UKTR_MODEL` | translation model for `listen` |
-| `UKTR_TO` | `English` | target language |
+| `UKTR_LANGUAGE` | the desktop language | your language: a code or name (`nl`, `Dutch`) |
+| `UKTR_TO` | `UKTR_LANGUAGE` | target language for uktr |
 | `UKTR_OCR` | `ukr+eng` | tesseract languages for `shot` |
 | `UKTR_LANG` | `uk` | spoken language for `listen` (empty = auto-detect) |
 | `UKTR_ASR_URL` | `UKTR_URL` | API base URL for Whisper |
@@ -313,16 +338,16 @@ with the same name override the file. See `config.example`.
 | `UKTR_SILENCE` | `300` | int16 RMS level that counts as quiet |
 | `ELI12_MODEL` | `qwen3.5:9b` | chat model for `eli12` |
 | `ELI12_SENTENCES` | `5` | longest explanation for `eli12`, in sentences |
-| `ELI12_LANG` | `nl` | language for `eli12`: `nl`, `en` or `both` |
+| `ELI12_LANG` | `UKTR_LANGUAGE` | language for `eli12` (a code, a name, or `both`) |
 | `FIX_MODEL` | `qwen3.5:9b` | chat model for `fixtext` |
 | `ASK_MODEL` | `qwen3.5:9b` | chat model for `ask` (must read images for `--screen`) |
 | `ASK_HISTORY` | `1` | `0`: do not save `ask` chats |
-| `ASK_SCREEN_PROMPT` | (English) | first question for `ask --screen` |
+| `ASK_SCREEN_PROMPT` | (English, answer in your language) | first question for `ask --screen`; `{language}` = your language |
 
-Example, one-off Russian to Dutch:
+Example, one-off: translate to German, and subtitles for Russian audio:
 
 ```sh
-UKTR_TO=Dutch uktr < article.txt
+UKTR_TO=German uktr < article.txt
 UKTR_LANG=ru uktr listen
 ```
 

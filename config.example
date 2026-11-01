@@ -11,7 +11,11 @@ UKTR_LISTEN_MODEL=hy-mt2-flash:1.8b
 #UKTR_URL=http://localhost:11434/v1
 #UKTR_MODEL=gemma4:12b
 
-# Target language (default English)
+# Your language: translations and explanations are written in it.
+# Default: the language of the desktop (LANGUAGE, LC_ALL, LC_MESSAGES, LANG).
+#UKTR_LANGUAGE=Dutch
+
+# uktr: target language, if not your language
 #UKTR_TO=English
 
 # uktr shot: tesseract languages
@@ -26,11 +30,11 @@ UKTR_LISTEN_MODEL=hy-mt2-flash:1.8b
 
 # eli12: chat model that explains texts like you are 12 (translation models cannot)
 #ELI12_MODEL=qwen3.5:9b
-#ELI12_LANG=nl   # nl, en or both
+#ELI12_LANG=nl   # a code or name, or both (yours, then English); default UKTR_LANGUAGE
 #ELI12_SENTENCES=5   # longest explanation, in sentences
 
 # fixtext and ask: chat models
 #FIX_MODEL=qwen3.5:9b
 #ASK_MODEL=qwen3.5:9b
 #ASK_HISTORY=0   # do not save ask chats
-#ASK_SCREEN_PROMPT=Wat staat er op dit scherm? Leg kort uit wat belangrijk is.
+#ASK_SCREEN_PROMPT=What is on this screen? Answer in {language}.
