@@ -112,7 +112,8 @@ much shorter or longer than the original, `fixtext` keeps the original part. Mod
 Meta+Shift+Q opens a chat window. Type a question and press Enter; the answer streams in
 as the model writes it, with markdown (code blocks, lists). Ask follow-up questions: the
 window keeps the conversation until you press New chat or close it. The model answers in
-the language of your message and knows today's date.
+the language of your message and knows today's date, the distribution and the desktop
+(for example "openSUSE Tumbleweed, KDE Plasma 6.8.1 on Wayland"), so commands fit your system.
 
 | Key | Action |
 |---|---|

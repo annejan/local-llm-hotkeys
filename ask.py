@@ -13,6 +13,7 @@ Uses the same backend and config file as uktr (~/.config/uktr/config, UKTR_URL).
   ASK_MODEL   default qwen3.5:9b (any chat model)
 """
 import datetime
+import functools
 import os
 import subprocess
 import sys
@@ -24,10 +25,35 @@ import uktr  # noqa: E402  (shares config and the streaming chat request)
 MODEL = uktr.conf.get("ASK_MODEL", "qwen3.5:9b")
 HISTORY_CHARS = 24000  # older turns are dropped so the prompt stays inside the context window
 
-RULES = ("You are a helpful assistant on the user's Linux (KDE Plasma) computer. Today is {today}. "
+RULES = ("You are a helpful assistant on the user's computer: {system}. Today is {today}. "
          "Answer in the language of the user's last message. Be short and concrete: a direct "
          "answer first, then only the details that matter. Markdown is fine. If you do not know "
          "or are not sure, say so.")
+
+
+@functools.cache
+def system():
+    """For example "openSUSE Tumbleweed, KDE Plasma 6.8.1 on Wayland", so answers fit this
+    computer (zypper, not apt; Plasma 6 settings, not Plasma 5)."""
+    parts = []
+    try:
+        with open("/etc/os-release") as f:
+            info = dict(line.rstrip().split("=", 1) for line in f if "=" in line)
+        parts.append(info.get("PRETTY_NAME", "Linux").strip('"'))
+    except OSError:
+        parts.append("Linux")
+    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "")
+    if "KDE" in desktop:
+        try:
+            out = subprocess.run(["plasmashell", "--version"], capture_output=True, text=True,
+                                 timeout=3).stdout.split()
+            desktop = f"KDE Plasma {out[-1]}" if out else "KDE Plasma"
+        except (OSError, subprocess.TimeoutExpired):
+            desktop = "KDE Plasma"
+    session = os.environ.get("XDG_SESSION_TYPE", "")
+    if desktop:
+        parts.append(desktop + (f" on {session.capitalize()}" if session else ""))
+    return ", ".join(parts)
 
 
 class Chat:
@@ -44,7 +70,7 @@ class Chat:
             if keep and size > HISTORY_CHARS:
                 break
             keep.insert(0, turn)
-        return [{"role": "system", "content": RULES.format(today=today)}] + keep
+        return [{"role": "system", "content": RULES.format(system=system(), today=today)}] + keep
 
     def ask(self, question):
         """Yield the answer in pieces. The answer goes into the history when the stream ends,
