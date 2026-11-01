@@ -1,0 +1,6 @@
+// Copilot/AI key on laptops: sends Shift+Super+F23. The stock "inet" symbols turn that
+// into XF86Assistant, which Qt/KDE cannot bind. Keep it plain F23, so KDE sees
+// Meta+Shift+F23 and a global shortcut can use it.
+default partial xkb_symbols "f23" {
+    key <FK23> { type[Group1] = "ONE_LEVEL", symbols[Group1] = [ F23 ] };
+};

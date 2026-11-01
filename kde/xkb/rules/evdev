@@ -1,0 +1,5 @@
+// Personal rules: the system evdev rules plus the copilot override for every layout.
+! include %S/evdev
+
+! model = symbols
+  * = +copilot(f23)

@@ -1,24 +1,38 @@
 # local-llm-hotkeys
 
-KDE hotkeys and Dolphin menu actions that send text to a local LLM. Four tools:
+KDE hotkeys and Dolphin menu actions that send text (or a screenshot) to a local LLM.
+Four tools:
 
-- **uktr**: rough translation of Ukrainian (or any other language) to English.
+- **uktr**: rough translation of Ukrainian (or any other language) to English or Dutch.
 - **eli12**: explains a text like you are 12.
 - **fixtext**: fixes spelling and grammar of the clipboard.
-- **ask**: a chat window for quick questions and follow-ups.
+- **ask**: a chat window for quick questions and follow-ups, also about a screenshot.
 
-Both talk to any OpenAI-compatible server. The default setup runs everything on the
+All four talk to any OpenAI-compatible server. The default setup runs everything on the
 AMD Ryzen AI NPU with [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM), so the GPU
 stays free (for example for video playback). Nothing leaves your computer.
 
 Python standard library only, except the `ask` chat window, which uses PySide6.
 
+## Hotkeys
+
+| Key | Action |
+|---|---|
+| Meta+Shift+T | translate the clipboard to English (`uktr clip`) |
+| Alt+Copilot (or AltGr+Copilot) | translate the clipboard to Dutch |
+| Meta+Shift+Y | translate a screen region (`uktr shot`) |
+| Meta+Shift+E or Ctrl+Copilot | explain the clipboard (`eli12 clip`) |
+| Meta+Shift+F | fix spelling of the clipboard (`fixtext clip`) |
+| Meta+Shift+Q or Copilot | chat (`ask --popup`) |
+| Ctrl+Alt+Copilot | explain the active window (`ask --screen`) |
+
+In Dolphin, right-click a document for "Translate to English (uktr)" and "Explain like I'm
+12 (eli12)". See [Install](#install) for the setup and [the Copilot key](#the-copilot-key).
+
 ## uktr: translate
 
 Rough translation with a local LLM. It is for reading, not for publishing. The output is
 rough, and some mistakes are funny.
-
-### Modes
 
 | Command | Input | Output |
 |---|---|---|
@@ -26,11 +40,14 @@ rough, and some mistakes are funny.
 | `uktr clip` | clipboard | popup window, result also copied to the clipboard |
 | `uktr shot` | screen region (spectacle + tesseract OCR) | popup window |
 | `uktr FILE [-o OUT]` | `.pdf` `.epub` `.docx` `.odt` `.html` `.txt` `.md` | `FILE.en.md` |
+| `uktr --notify FILE` | same, with notifications (Dolphin menu) | `FILE.en.md` |
 | `uktr listen [--orig]` | system audio (live) | subtitles in the terminal |
 
-Long text goes to the model in chunks of about 1500 characters, split at paragraph breaks.
+The target language is `UKTR_TO` (default English). The output file gets the language code:
+`FILE.nl.md` for Dutch. Long text goes to the model in chunks of about 1500 characters,
+split at paragraph breaks.
 
-#### `uktr listen`
+### `uktr listen`
 
 Live subtitles for what plays on the speakers (YouTube, a call, a podcast):
 
@@ -52,9 +69,8 @@ konsole -e uktr listen --orig
 
 ## eli12: explain it like I'm 12
 
-`eli12` is a second tool in this repository. It reads a text (a long boring email, a
-README, an article, a PDF) and says in at most 5 short sentences what it is about and what
-matters most, in plain words.
+`eli12` reads a text (a long boring email, a README, an article, a PDF) and says in at most
+5 short sentences what it is about and what matters most, in plain words.
 
 If the text asks you to do something, as an email or letter does, `eli12` ends with a line
 `Te doen:` (`To do:` in English) that lists every action with its deadline. Dates are copied
@@ -69,12 +85,12 @@ document.
 | `eli12 clip` | clipboard | popup window |
 | `eli12 --popup FILE` | file | popup window (Dolphin menu) |
 
-The default language is Dutch (`ELI12_LANG` in the config). `-l en` gives English, and `-l both`
-gives Dutch followed by English.
+The default language is Dutch (`ELI12_LANG`). `-l en` gives English, and `-l both` gives Dutch
+followed by English.
 
-It uses the same server and config file as uktr, but a chat model (`ELI12_MODEL`, default
-`qwen3.5:9b`), because translation models cannot explain. A long README (about 2000 words) takes
-about 25 s on the NPU. Text after the first 60,000 characters is ignored.
+It uses a chat model (`ELI12_MODEL`, default `qwen3.5:9b`), because translation models cannot
+explain. A long README (about 2000 words) takes about 25 s on the NPU. Text after the first
+60,000 characters is ignored.
 
 Example (a long email from a facility team about a new booking system and lockers):
 
@@ -109,11 +125,11 @@ much shorter or longer than the original, `fixtext` keeps the original part. Mod
 
 ## ask: chat
 
-Meta+Shift+Q opens a chat window. Type a question and press Enter; the answer streams in
-as the model writes it, with markdown (code blocks, lists). Ask follow-up questions: the
-window keeps the conversation until you press New chat or close it. The model answers in
-the language of your message and knows today's date, the distribution and the desktop
-(for example "openSUSE Tumbleweed, KDE Plasma 6.8.1 on Wayland"), so commands fit your system.
+Meta+Shift+Q (or the Copilot key) opens a chat window. Type a question and press Enter; the
+answer streams in as the model writes it, with markdown (code blocks, lists). Ask follow-up
+questions: the model sees the whole conversation. It answers in the language of your message
+and knows today's date, the distribution and the desktop (for example "openSUSE Tumbleweed,
+KDE Plasma 6.8 on Wayland"), so commands fit your system.
 
 | Key | Action |
 |---|---|
@@ -127,11 +143,15 @@ the language of your message and knows today's date, the distribution and the de
 |---|---|---|
 | `ask --popup` | chat window | chat window |
 | `ask --screen` | screenshot of the active window | chat window |
-| `ask` | chat in the terminal (`/new` starts a new chat, empty line quits) | terminal |
+| `ask` | chat in the terminal (`/new` starts a new chat, Ctrl+D or `/quit` quits) | terminal |
 | `ask --list` | saved chats, newest first | stdout |
 | `ask --resume [N]` | continue saved chat N (default 1, the newest) | terminal |
 | `ask QUESTION...` | command line | stdout |
 | `ask < question` | stdin | stdout |
+
+Model: `ASK_MODEL`, default `qwen3.5:9b`. The first words come after about 1 s. When a
+conversation gets longer than about 24,000 characters, the oldest messages are dropped. A 9B
+model makes mistakes, so check facts that matter.
 
 ### Explain the active window
 
@@ -150,34 +170,45 @@ Every chat from the window or the terminal is saved after each answer, as a JSON
 it and ask more. Right-click or Del removes a chat (after a confirmation). One-shot questions
 (`ask QUESTION`, `ask < question`) are not saved. Set `ASK_HISTORY=0` to save nothing.
 
-The window needs PySide6 (`python313-pyside6` on openSUSE). Without it, `ask --popup` opens
-the terminal chat in Konsole. Model: `ASK_MODEL`, default `qwen3.5:9b`. The first words
-come after about 1 s. When a conversation gets longer than about 24,000 characters, the
-oldest messages are dropped. A 9B model makes mistakes, so check facts that matter.
+## Install
 
-## Requirements
+### Requirements
 
 - Python 3.9+
-- A server with an OpenAI-compatible API: FastFlowLM (NPU) or ollama (GPU/CPU)
-- `clip`: `wl-clipboard`, `kdialog`, `notify-send`
-- `ask --popup`: PySide6; `ask --screen` also needs `spectacle`
-- `shot`: `spectacle`, `tesseract` with Ukrainian data (`tesseract-ocr-traineddata-ukr` on openSUSE)
-- `FILE`: `pdftotext` (poppler) for PDF, `pandoc` for epub/docx/odt/html
-- `listen`: `parec` (pipewire-pulse or PulseAudio), and a server with Whisper
+- A server with an OpenAI-compatible API: FastFlowLM (NPU, see [below](#backend-fastflowlm-on-the-npu))
+  or ollama (GPU/CPU)
+- KDE Plasma 6 on Wayland for the hotkeys and popups
 
-## Install
+On openSUSE Tumbleweed:
+
+```sh
+sudo zypper install wl-clipboard kdialog libnotify-tools spectacle python313-pyside6 \
+    tesseract-ocr tesseract-ocr-traineddata-ukr poppler-tools pandoc-cli pulseaudio-utils
+```
+
+| Package | Needed for |
+|---|---|
+| `wl-clipboard`, `kdialog`, `libnotify-tools` | the hotkeys: clipboard, popup, notifications |
+| `python313-pyside6` | the `ask` window (without it, `ask` opens in Konsole) |
+| `spectacle` | `uktr shot`, `ask --screen` |
+| `tesseract-ocr`, `tesseract-ocr-traineddata-ukr` | `uktr shot` (OCR) |
+| `poppler-tools` (`pdftotext`), `pandoc-cli` | PDF, and epub/docx/odt/html files |
+| `pulseaudio-utils` (`parec`) | `uktr listen` |
+
+### The tools
 
 ```sh
 git clone https://github.com/annejan/local-llm-hotkeys.git
 cd local-llm-hotkeys
-ln -s "$PWD/uktr.py" ~/.local/bin/uktr
-ln -s "$PWD/eli12.py" ~/.local/bin/eli12
-ln -s "$PWD/fixtext.py" ~/.local/bin/fixtext
-ln -s "$PWD/ask.py" ~/.local/bin/ask
-mkdir -p ~/.config/uktr && cp config.example ~/.config/uktr/config
+mkdir -p ~/.local/bin ~/.config/uktr
+for tool in uktr eli12 fixtext ask; do ln -s "$PWD/$tool.py" ~/.local/bin/$tool; done
+cp config.example ~/.config/uktr/config
 ```
 
-KDE integration (optional):
+The commands are symlinks into this directory, so keep it where it is. `~/.local/bin` must be
+in your `PATH` (it is by default on openSUSE). Check with `uktr --help`.
+
+### KDE hotkeys and Dolphin menu
 
 ```sh
 cp kde/*.desktop ~/.local/share/applications/
@@ -187,22 +218,24 @@ cp kde/servicemenu/uktr.desktop ~/.local/share/kio/servicemenus/
 chmod +x ~/.local/share/kio/servicemenus/uktr.desktop
 ```
 
-- Meta+Shift+T: translate the clipboard
-- Meta+Shift+Y: translate a screen region
-- Meta+Shift+E or Ctrl+Copilot: explain the clipboard with eli12
-- Meta+Shift+F: fix spelling of the clipboard with fixtext
-- Meta+Shift+Q or the Copilot key: chat with ask
-- Alt+Copilot (or AltGr+Copilot): translate the clipboard to Dutch
-- Ctrl+Alt+Copilot: explain the active window (screenshot) with ask
-- Dolphin right-click on a document: "Translate to English (uktr)" and "Explain like I'm 12 (eli12)"
-
 The shortcuts come from `X-KDE-Shortcuts` in the `.desktop` files. After `kbuildsycoca6`,
-KDE (Plasma 6) registers them at once; it does not write default shortcuts to
-`~/.config/kglobalshortcutsrc`. To change a key, use System Settings → Shortcuts.
+KDE (Plasma 6) registers them at once. To change a key, use System Settings → Shortcuts.
+
+### The Copilot key
 
 The Copilot key (on newer laptops, such as the ThinkPad T14 Gen 6) sends Meta+Shift+F23.
-Depending on the keyboard layout, KDE sees it as "Meta+Shift+F23" or as
-"Meta+Shift+Touchpad Off", so the `.desktop` files list both names.
+Recent keyboard maps (xkeyboard-config, `inet` symbols) turn that into the key symbol
+`XF86Assistant`. Qt does not know that symbol, so KDE cannot use the key as a shortcut. The
+files in `kde/xkb/` keep the key as plain F23 for every layout:
+
+```sh
+mkdir -p ~/.config/xkb && cp -r kde/xkb/* ~/.config/xkb/
+```
+
+Log out and in again, so that KWin loads the new keyboard map. KDE then sees Meta+Shift+F23.
+With an older keyboard map, KDE sees "Meta+Shift+Touchpad Off" instead; the `.desktop` files
+list both names, so the shortcuts work either way.
+
 Ctrl and Alt are free to add, so there are four combinations: Copilot (ask), Ctrl+Copilot
 (eli12), Alt+Copilot (translate to Dutch) and Ctrl+Alt+Copilot (explain the active window).
 AltGr works as Alt here.
@@ -212,7 +245,8 @@ AltGr works as Alt here.
 Tested on a Ryzen AI 7 PRO 350 (XDNA2) with openSUSE Tumbleweed, kernel 7.2+ (`amdxdna`).
 
 1. Get the portable Linux tarball (`fastflowlm_<version>_linux.tar.gz`) from the FastFlowLM
-   releases. It includes XRT and the xdna plugin, so you do not have to build XRT.
+   releases. It includes XRT and the xdna plugin, so you do not have to build XRT. Put `flm`
+   in `~/.local/bin`.
 2. Raise the locked-memory limit. The NPU needs more than the 8 MB default. Plasma apps
    get their limits from the systemd user manager, not from PAM, so use a drop-in for
    `user@.service`:
@@ -227,44 +261,48 @@ Tested on a Ryzen AI 7 PRO 350 (XDNA2) with openSUSE Tumbleweed, kernel 7.2+ (`a
 3. Get the models:
 
    ```sh
-   flm pull hy-mt2-flash:1.8b    # translation, ~1.4 GB
-   flm pull translategemma:4b    # better translation, slower, ~4.5 GB
-   flm pull whisper-v3:turbo     # speech-to-text for `listen`, ~0.6 GB
+   flm pull translategemma:4b    # translation (uktr), ~4.5 GB
+   flm pull hy-mt2-flash:1.8b    # fast translation (uktr listen), ~1.4 GB
+   flm pull whisper-v3:turbo     # speech-to-text (uktr listen), ~0.6 GB
+   flm pull qwen3.5:9b           # chat and images (eli12, fixtext, ask)
    ```
 
 4. Install and start the server (OpenAI API on port 52625):
 
    ```sh
+   mkdir -p ~/.config/systemd/user
    cp systemd/flm.service ~/.config/systemd/user/
    systemctl --user daemon-reload
    systemctl --user enable --now flm
    ```
 
-   The unit expects `flm` at `~/.local/bin/flm`. `-a 1` loads Whisper next to the
-   translation model.
+   `-a 1` loads Whisper next to the other model.
 
 ### Models
 
-- `hy-mt2-flash:1.8b` (Hunyuan Hy-MT2): a model only for translation. It is fast on the
-  NPU (about 50 tokens/s output) and gives good results. uktr sends it the user-only prompt
-  it was trained on when the model name contains `hy-mt`.
-- `translategemma:4b`: also a translation model. Better than Hy-MT2 with slang and
-  abbreviations, but about 3.5x slower (6.3 s against 1.8 s for two paragraphs).
-  The example config uses it for `clip`, `shot` and files, and Hy-MT2 for `listen`.
-  FLM loads one translation model at a time, so the first request after a change of
-  model takes 2–5 s more.
-- Any chat model works too (for example `gemma4:12b` in ollama). These get a system prompt
-  that tells them to output only the translation.
+- `translategemma:4b`: a translation model. Better than Hy-MT2 with slang and abbreviations,
+  but about 3.5x slower (6.3 s against 1.8 s for two paragraphs). The default for `clip`,
+  `shot` and files.
+- `hy-mt2-flash:1.8b` (Hunyuan Hy-MT2): a model only for translation. It is fast on the NPU
+  (about 50 tokens/s output) and gives good results; the example config uses it for
+  `listen`, where speed matters. uktr sends it the user-only prompt it was trained on when
+  the model name contains `hy-mt`.
+- `qwen3.5:9b`: a chat model that also reads images. eli12, fixtext and ask use it.
+- FLM loads one language model at a time (Whisper stays loaded next to it), so the first
+  request after a change of model (for example translate, then chat) takes a few seconds more.
+- With ollama, any chat model works for translation too (for example `gemma4:12b`); it gets
+  a system prompt that tells it to output only the translation. Set `ELI12_MODEL`,
+  `FIX_MODEL` and `ASK_MODEL` to a chat model that you have.
 
 ## Configuration
 
-`~/.config/uktr/config` holds `KEY=value` lines. Environment variables with the same name
-override the file. See `config.example`.
+`~/.config/uktr/config` holds `KEY=value` lines (`#` starts a comment). Environment variables
+with the same name override the file. See `config.example`.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `UKTR_URL` | `http://localhost:11434/v1` | OpenAI-compatible API base URL |
-| `UKTR_MODEL` | `gemma4:12b` | translation model |
+| `UKTR_URL` | `http://localhost:52625/v1` | OpenAI-compatible API base URL (all tools) |
+| `UKTR_MODEL` | `translategemma:4b` | translation model |
 | `UKTR_LISTEN_MODEL` | `UKTR_MODEL` | translation model for `listen` |
 | `UKTR_TO` | `English` | target language |
 | `UKTR_OCR` | `ukr+eng` | tesseract languages for `shot` |
@@ -277,7 +315,7 @@ override the file. See `config.example`.
 | `ELI12_SENTENCES` | `5` | longest explanation for `eli12`, in sentences |
 | `ELI12_LANG` | `nl` | language for `eli12`: `nl`, `en` or `both` |
 | `FIX_MODEL` | `qwen3.5:9b` | chat model for `fixtext` |
-| `ASK_MODEL` | `qwen3.5:9b` | chat model for `ask` |
+| `ASK_MODEL` | `qwen3.5:9b` | chat model for `ask` (must read images for `--screen`) |
 | `ASK_HISTORY` | `1` | `0`: do not save `ask` chats |
 | `ASK_SCREEN_PROMPT` | (English) | first question for `ask --screen` |
 
@@ -286,6 +324,15 @@ Example, one-off Russian to Dutch:
 ```sh
 UKTR_TO=Dutch uktr < article.txt
 UKTR_LANG=ru uktr listen
+```
+
+## Development
+
+`llm.py` holds what the tools share: config, the chat requests, file extraction, clipboard,
+notifications and the popup. The tests need no server:
+
+```sh
+python3 -m unittest discover -s tests
 ```
 
 ## License
