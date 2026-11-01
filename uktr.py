@@ -57,7 +57,7 @@ def translate(text, model=None):
 
 
 def chat(system, text, model, temperature=0.2, timeout=600):
-    """One chat request with thinking off. Used by eli12, fixtext and ask."""
+    """One chat request with thinking off. Used by eli12 and fixtext."""
     body = {"model": model, "stream": False, "temperature": temperature,
             "chat_template_kwargs": {"enable_thinking": False},
             "messages": [{"role": "system", "content": system},
@@ -66,6 +66,24 @@ def chat(system, text, model, temperature=0.2, timeout=600):
                                  {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)["choices"][0]["message"]["content"].strip()
+
+def chat_stream(messages, model, temperature=0.5, timeout=600):
+    """Stream a chat reply (thinking off): yields text pieces as the model writes them."""
+    body = {"model": model, "stream": True, "temperature": temperature,
+            "chat_template_kwargs": {"enable_thinking": False}, "messages": messages}
+    req = urllib.request.Request(URL + "/chat/completions", json.dumps(body).encode(),
+                                 {"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        for line in r:
+            line = line.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]":
+                return
+            piece = json.loads(data)["choices"][0].get("delta", {}).get("content")
+            if piece:
+                yield piece
 
 def chunks(text):
     buf = ""

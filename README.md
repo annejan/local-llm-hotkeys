@@ -5,13 +5,13 @@ KDE hotkeys and Dolphin menu actions that send text to a local LLM. Four tools:
 - **uktr**: rough translation of Ukrainian (or any other language) to English.
 - **eli12**: explains a text like you are 12.
 - **fixtext**: fixes spelling and grammar of the clipboard.
-- **ask**: a quick question in an input box, the answer in a popup.
+- **ask**: a chat window for quick questions and follow-ups.
 
 Both talk to any OpenAI-compatible server. The default setup runs everything on the
 AMD Ryzen AI NPU with [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM), so the GPU
 stays free (for example for video playback). Nothing leaves your computer.
 
-Python standard library only.
+Python standard library only, except the `ask` chat window, which uses PySide6.
 
 ## uktr: translate
 
@@ -107,26 +107,38 @@ The model sometimes answers a question in the text instead of fixing it. If a fi
 much shorter or longer than the original, `fixtext` keeps the original part. Model:
 `FIX_MODEL`, default `qwen3.5:9b`. Text over 20,000 characters is refused.
 
-## ask: a quick question
+## ask: chat
 
-Meta+Shift+Q opens an input box. Type a question; the answer opens in a popup window and is
-also copied to the clipboard. The model answers in the language of the question and knows
-today's date.
+Meta+Shift+Q opens a chat window. Type a question and press Enter; the answer streams in
+as the model writes it, with markdown (code blocks, lists). Ask follow-up questions: the
+window keeps the conversation until you press New chat or close it. The model answers in
+the language of your message and knows today's date.
+
+| Key | Action |
+|---|---|
+| Enter / Shift+Enter | send / new line |
+| Esc | stop the answer, or close the window |
+| Ctrl+N | new chat |
+| Ctrl+Shift+C | copy the last answer |
 
 | Command | Input | Output |
 |---|---|---|
-| `ask --popup` | input box | popup window |
+| `ask --popup` | chat window | chat window |
+| `ask` | chat in the terminal (`/new` starts a new chat, empty line quits) | terminal |
 | `ask QUESTION...` | command line | stdout |
 | `ask < question` | stdin | stdout |
 
-Model: `ASK_MODEL`, default `qwen3.5:9b`. A short answer takes about 3 s, a how-to with
-steps about 20 s. A 9B model makes mistakes, so check facts that matter.
+The window needs PySide6 (`python313-pyside6` on openSUSE). Without it, `ask --popup` opens
+the terminal chat in Konsole. Model: `ASK_MODEL`, default `qwen3.5:9b`. The first words
+come after about 1 s. When a conversation gets longer than about 24,000 characters, the
+oldest messages are dropped. A 9B model makes mistakes, so check facts that matter.
 
 ## Requirements
 
 - Python 3.9+
 - A server with an OpenAI-compatible API: FastFlowLM (NPU) or ollama (GPU/CPU)
 - `clip`: `wl-clipboard`, `kdialog`, `notify-send`
+- `ask --popup`: PySide6
 - `shot`: `spectacle`, `tesseract` with Ukrainian data (`tesseract-ocr-traineddata-ukr` on openSUSE)
 - `FILE`: `pdftotext` (poppler) for PDF, `pandoc` for epub/docx/odt/html
 - `listen`: `parec` (pipewire-pulse or PulseAudio), and a server with Whisper
@@ -158,7 +170,7 @@ chmod +x ~/.local/share/kio/servicemenus/uktr.desktop
 - Meta+Shift+Y: translate a screen region
 - Meta+Shift+E: explain the clipboard with eli12
 - Meta+Shift+F: fix spelling of the clipboard with fixtext
-- Meta+Shift+Q: ask a question
+- Meta+Shift+Q: chat with ask
 - Dolphin right-click on a document: "Translate to English (uktr)" and "Explain like I'm 12 (eli12)"
 
 The shortcuts come from `X-KDE-Shortcuts` in the `.desktop` files. After `kbuildsycoca6`,
