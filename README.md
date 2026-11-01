@@ -43,9 +43,15 @@ konsole -e uktr listen --orig
 
 ## eli12: explain it like I'm 12
 
-`eli12` is a second tool in this repository. It reads a text (a README, an article, a PDF)
-and explains in at most 3 short sentences what the thing is and why someone would want it,
-in Dutch or English. It avoids tech words and uses an everyday comparison.
+`eli12` is a second tool in this repository. It reads a text (a long boring email, a
+README, an article, a PDF) and says in at most 3 short sentences what it is about and what
+matters most, in plain words.
+
+If the text asks you to do something, as an email or letter does, `eli12` ends with a line
+`Te doen:` (`To do:` in English) that lists every action with its deadline. Dates are copied
+as written. For documentation such as a README there is no such line: the model first labels
+the text as a message or a document, and the code drops everything after the explanation for a
+document.
 
 | Command | Input | Output |
 |---|---|---|
@@ -61,10 +67,15 @@ It uses the same server and config file as uktr, but a chat model (`ELI12_MODEL`
 `qwen3.5:9b`), because translation models cannot explain. A long README (about 2000 words) takes
 about 25 s on the NPU. Text after the first 60,000 characters is ignored.
 
-Example (this repository's README):
+Example (a long email from a facility team about a new booking system and lockers):
 
-> Dit is een tool die teksten en spraak vertaalt, zoals een slimme vertaalmachine. Het werkt
-> snel zonder internet door je eigen computer te gebruiken. […]
+> Het facilitair team introduceert een nieuw reserveringssysteem en vervangt kluisjes. Je moet
+> je oude boekingen opnieuw maken en persoonlijke spullen uit de kasten halen.
+>
+> Te doen: […] terugkerende werkplekreserveringen in FlexDesk 4 uiterlijk vrijdag 12 december
+> […]; persoonlijke eigendommen uit kluisjes op de tweede verdieping vóór maandag 8 december.
+
+For an email in Thunderbird: select the text, copy it, and run `eli12 clip`.
 
 ## Requirements
 

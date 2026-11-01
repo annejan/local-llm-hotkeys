@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""eli12: explain a text (a README, an article) like you are 12. Super short, in Dutch or English.
+"""eli12: explain a text (an email, a README, an article) like you are 12. Super short, in Dutch or English.
 
   eli12 FILE            .pdf .epub .docx .html .txt .md -> stdout
   eli12 < text          stdin -> stdout
@@ -26,31 +26,47 @@ MODEL = uktr.conf.get("ELI12_MODEL", "qwen3.5:9b")
 MAX_CHARS = 60000  # ~20k tokens; longer text is cut, the start of a README says the most
 LANGS = {"nl": "Dutch", "en": "English"}
 
-RULES = ("You explain things to a curious 12-year-old who is smart but knows nothing about computers. "
-         "Read the text. Say what the thing IS and WHY someone would want it. Use at most 3 short "
-         "sentences per language, each under 20 words. Use everyday words and one comparison from "
-         "normal life (school, games, cooking, sport). Do not use abbreviations or tech words such as "
-         "LLM, NPU, GPU, API, model, server, CLI, OCR. Do not list features. ")
+TODO = {"nl": "Te doen:", "en": "To do:"}
+YOU = {"nl": "Address the reader as 'je', not 'u'. ", "en": ""}
+RULES = ("You explain texts to a smart 12-year-old. The text can be anything: an email, a README, "
+         "an article, a letter.\n"
+         "First line: write [message] if the text is addressed to the reader and asks them for "
+         "something (an email, a letter, a notice), or [document] if it is documentation, an article "
+         "or a description (a README is a [document]).\n"
+         "Then, in at most 3 short sentences (each under 20 words), say what the text is about and "
+         "what matters most. Skip greetings, politeness, background and repetition. Use everyday "
+         "words; explain or avoid jargon and abbreviations. Use a comparison from normal life only if "
+         "it really helps. Only state facts that are in the text; do not guess consequences.\n"
+         "For a [message], end with one line that starts with '{todo}' and names every action the "
+         "reader must take with its deadline. Copy dates exactly as the text writes them: never add a "
+         "year, a weekday or a date that is not in the text.\n"
+         "{you}Write only in {lang}, with no other heading. Nothing else.")
+KIND = re.compile(r"^\W*\[?(message|document)\]?\W*\n?", re.I)
 
 
-def explain(text, langs):
-    if len(langs) == 2:
-        fmt = "Write the Dutch version under 'NL:' and the English version under 'EN:'. Nothing else."
-    else:
-        fmt = f"Write only in {LANGS[langs[0]]}, no heading. Nothing else."
-    body = {"model": MODEL, "stream": False, "temperature": 0.4,
+def explain(text, lang):
+    """One explanation in one language (nl or en). Both = call this twice: one language per
+    request is far more reliable than asking a small model for two sections.
+
+    The model labels the text first. A small model ignores "no to-do line for documentation",
+    but it labels reliably, so for a [document] the code keeps only the first paragraph."""
+    rules = RULES.format(todo=TODO[lang], you=YOU[lang], lang=LANGS[lang])
+    body = {"model": MODEL, "stream": False, "temperature": 0.3,
             "chat_template_kwargs": {"enable_thinking": False},
-            "messages": [{"role": "system", "content": RULES + fmt},
+            "messages": [{"role": "system", "content": rules},
                          {"role": "user", "content": text[:MAX_CHARS]}]}
     req = urllib.request.Request(uktr.URL + "/chat/completions", json.dumps(body).encode(),
                                  {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=600) as r:
         out = json.load(r)["choices"][0]["message"]["content"].strip()
-    if len(langs) == 2:
-        # Some models put English first despite the instructions; put Dutch first.
-        parts = dict(re.findall(r"(?ms)^\W*(NL|EN)\W*:?\s*(.*?)\s*(?=^\W*(?:NL|EN)\W*:|\Z)", out))
-        if parts.keys() == {"NL", "EN"}:
-            out = f"NL: {parts['NL']}\n\nEN: {parts['EN']}"
+    m = KIND.match(out)
+    if not m:
+        return out
+    out = out[m.end():].strip()
+    if m.group(1).lower() == "document":
+        # The explanation is the first paragraph. After it, small models add install steps or
+        # "no action needed" in many wordings; drop everything after the first blank line.
+        out = re.split(r"\n\s*\n", out, maxsplit=1)[0].strip()
     return out
 
 
@@ -83,7 +99,7 @@ def main(argv):
     if popup:
         uktr.notify(f"explaining {title}…")
     try:
-        out = explain(text, langs)
+        out = "\n\n".join(explain(text, lg) for lg in langs)
     except OSError as e:
         msg = f"eli12 failed: {e}"
         return uktr.notify(msg) if popup else sys.exit(msg)
