@@ -75,7 +75,7 @@ Example (a long email from a facility team about a new booking system and locker
 > Te doen: […] terugkerende werkplekreserveringen in FlexDesk 4 uiterlijk vrijdag 12 december
 > […]; persoonlijke eigendommen uit kluisjes op de tweede verdieping vóór maandag 8 december.
 
-For an email in Thunderbird: select the text, copy it, and run `eli12 clip`.
+For an email in Thunderbird: select the text, press Ctrl+C, then Meta+Shift+E.
 
 ## Requirements
 
@@ -97,7 +97,8 @@ mkdir -p ~/.config/uktr && cp config.example ~/.config/uktr/config
 KDE integration (optional):
 
 ```sh
-cp kde/uktr-clip.desktop kde/uktr-shot.desktop ~/.local/share/applications/
+cp kde/uktr-clip.desktop kde/uktr-shot.desktop kde/eli12-clip.desktop ~/.local/share/applications/
+kbuildsycoca6
 mkdir -p ~/.local/share/kio/servicemenus
 cp kde/uktr-servicemenu.desktop ~/.local/share/kio/servicemenus/uktr.desktop
 chmod +x ~/.local/share/kio/servicemenus/uktr.desktop
@@ -105,10 +106,12 @@ chmod +x ~/.local/share/kio/servicemenus/uktr.desktop
 
 - Meta+Shift+T: translate the clipboard
 - Meta+Shift+Y: translate a screen region
+- Meta+Shift+E: explain the clipboard with eli12
 - Dolphin right-click on a document: "Translate to English (uktr)" and "Explain like I'm 12 (eli12)"
 
-The shortcuts come from `X-KDE-Shortcuts` in the `.desktop` files. If they do not work
-after you log in again, set them in System Settings → Shortcuts.
+The shortcuts come from `X-KDE-Shortcuts` in the `.desktop` files. After `kbuildsycoca6`,
+KDE (Plasma 6) registers them at once; it does not write default shortcuts to
+`~/.config/kglobalshortcutsrc`. To change a key, use System Settings → Shortcuts.
 
 ## Backend: FastFlowLM on the NPU
 

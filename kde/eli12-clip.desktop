@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=eli12: explain clipboard
+Comment=Explain the copied text (an email, a README) in a few simple sentences
+Exec=eli12 clip
+Icon=help-about
+Categories=Utility;
+X-KDE-Shortcuts=Meta+Shift+E
