@@ -22,3 +22,6 @@ UKTR_LISTEN_MODEL=hy-mt2-flash:1.8b
 #UKTR_ASR_MODEL=whisper-v3:turbo
 #UKTR_LISTEN_MAX=12
 #UKTR_SILENCE=300
+
+# eli12: chat model that explains texts like you are 12 (translation models cannot)
+#ELI12_MODEL=qwen3.5:9b

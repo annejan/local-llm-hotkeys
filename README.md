@@ -41,6 +41,30 @@ is unreliable on short chunks, so set it.
 konsole -e uktr listen --orig
 ```
 
+## eli12: explain it like I'm 12
+
+`eli12` is a second tool in this repository. It reads a text (a README, an article, a PDF)
+and explains in at most 3 short sentences what the thing is and why someone would want it,
+in Dutch and in English. It avoids tech words and uses an everyday comparison.
+
+| Command | Input | Output |
+|---|---|---|
+| `eli12 FILE` | same file types as uktr | stdout |
+| `eli12 < text` | stdin | stdout |
+| `eli12 clip` | clipboard | popup window |
+| `eli12 --popup FILE` | file | popup window (Dolphin menu) |
+
+`-l nl` or `-l en` gives one language only. The default is both, Dutch first.
+
+It uses the same server and config file as uktr, but a chat model (`ELI12_MODEL`, default
+`qwen3.5:9b`), because translation models cannot explain. A long README (about 2000 words) takes
+about 25 s on the NPU. Text after the first 60,000 characters is ignored.
+
+Example (this repository's README):
+
+> NL: Dit is een tool die teksten en spraak vertaalt, zoals een slimme vertaalmachine. Het werkt
+> snel zonder internet door je eigen computer te gebruiken. […]
+
 ## Requirements
 
 - Python 3.9+
@@ -54,6 +78,7 @@ konsole -e uktr listen --orig
 
 ```sh
 ln -s "$PWD/uktr.py" ~/.local/bin/uktr
+ln -s "$PWD/eli12.py" ~/.local/bin/eli12
 mkdir -p ~/.config/uktr && cp config.example ~/.config/uktr/config
 ```
 
@@ -68,7 +93,7 @@ chmod +x ~/.local/share/kio/servicemenus/uktr.desktop
 
 - Meta+Shift+T: translate the clipboard
 - Meta+Shift+Y: translate a screen region
-- Dolphin right-click on a document: "Translate to English (uktr)"
+- Dolphin right-click on a document: "Translate to English (uktr)" and "Explain like I'm 12 (eli12)"
 
 The shortcuts come from `X-KDE-Shortcuts` in the `.desktop` files. If they do not work
 after you log in again, set them in System Settings → Shortcuts.
@@ -139,6 +164,7 @@ override the file. See `config.example`.
 | `UKTR_ASR_MODEL` | `whisper-v3:turbo` | Whisper model |
 | `UKTR_LISTEN_MAX` | `12` | longest audio chunk, in seconds |
 | `UKTR_SILENCE` | `300` | int16 RMS level that counts as quiet |
+| `ELI12_MODEL` | `qwen3.5:9b` | chat model for `eli12` |
 
 Example, one-off Russian to Dutch:
 
