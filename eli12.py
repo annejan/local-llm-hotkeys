@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""eli12: explain a text (a README, an article) like you are 12. Super short, Dutch and English.
+"""eli12: explain a text (a README, an article) like you are 12. Super short, in Dutch or English.
 
   eli12 FILE            .pdf .epub .docx .html .txt .md -> stdout
   eli12 < text          stdin -> stdout
   eli12 clip            clipboard -> popup window
   eli12 --popup FILE    file -> popup window (Dolphin service menu)
 
-  -l nl | -l en         one language only (default: both, Dutch first)
+  -l nl | en | both     language (default nl, or ELI12_LANG); both = Dutch, then English
 
 Uses the same backend and config file as uktr (~/.config/uktr/config, UKTR_URL).
   ELI12_MODEL   default qwen3.5:9b (any chat model; translation-only models do not work)
+  ELI12_LANG    default nl
 """
 import json
 import os
@@ -54,14 +55,14 @@ def explain(text, langs):
 
 
 def main(argv):
-    langs = ["nl", "en"]
+    lang = uktr.conf.get("ELI12_LANG", "nl").lower()
     if "-l" in argv:
         i = argv.index("-l")
         lang = argv[i + 1].lower() if i + 1 < len(argv) else ""
-        if lang not in LANGS:
-            sys.exit("-l takes nl or en")
-        langs = [lang]
         del argv[i:i + 2]
+    if lang not in (*LANGS, "both"):
+        sys.exit("language must be nl, en or both")
+    langs = ["nl", "en"] if lang == "both" else [lang]
     popup = "--popup" in argv
     argv = [a for a in argv if a != "--popup"]
 

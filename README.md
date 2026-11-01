@@ -45,7 +45,7 @@ konsole -e uktr listen --orig
 
 `eli12` is a second tool in this repository. It reads a text (a README, an article, a PDF)
 and explains in at most 3 short sentences what the thing is and why someone would want it,
-in Dutch and in English. It avoids tech words and uses an everyday comparison.
+in Dutch or English. It avoids tech words and uses an everyday comparison.
 
 | Command | Input | Output |
 |---|---|---|
@@ -54,7 +54,8 @@ in Dutch and in English. It avoids tech words and uses an everyday comparison.
 | `eli12 clip` | clipboard | popup window |
 | `eli12 --popup FILE` | file | popup window (Dolphin menu) |
 
-`-l nl` or `-l en` gives one language only. The default is both, Dutch first.
+The default language is Dutch (`ELI12_LANG` in the config). `-l en` gives English, and `-l both`
+gives Dutch followed by English.
 
 It uses the same server and config file as uktr, but a chat model (`ELI12_MODEL`, default
 `qwen3.5:9b`), because translation models cannot explain. A long README (about 2000 words) takes
@@ -62,7 +63,7 @@ about 25 s on the NPU. Text after the first 60,000 characters is ignored.
 
 Example (this repository's README):
 
-> NL: Dit is een tool die teksten en spraak vertaalt, zoals een slimme vertaalmachine. Het werkt
+> Dit is een tool die teksten en spraak vertaalt, zoals een slimme vertaalmachine. Het werkt
 > snel zonder internet door je eigen computer te gebruiken. […]
 
 ## Requirements
@@ -165,6 +166,7 @@ override the file. See `config.example`.
 | `UKTR_LISTEN_MAX` | `12` | longest audio chunk, in seconds |
 | `UKTR_SILENCE` | `300` | int16 RMS level that counts as quiet |
 | `ELI12_MODEL` | `qwen3.5:9b` | chat model for `eli12` |
+| `ELI12_LANG` | `nl` | language for `eli12`: `nl`, `en` or `both` |
 
 Example, one-off Russian to Dutch:
 
