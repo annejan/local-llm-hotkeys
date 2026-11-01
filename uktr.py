@@ -27,7 +27,7 @@ try:
         for line in f:
             key, sep, val = line.strip().partition("=")
             if sep and not key.startswith("#"):
-                conf[key.strip()] = val.strip()
+                conf[key.strip()] = val.split(" #")[0].strip()  # "KEY=val   # comment"
 except FileNotFoundError:
     pass
 conf.update({k: v for k, v in os.environ.items() if k.startswith("UKTR_")})
