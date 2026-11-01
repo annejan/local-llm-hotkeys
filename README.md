@@ -189,7 +189,8 @@ KDE (Plasma 6) registers them at once; it does not write default shortcuts to
 `~/.config/kglobalshortcutsrc`. To change a key, use System Settings → Shortcuts.
 
 The Copilot key (on newer laptops, such as the ThinkPad T14 Gen 6) sends Meta+Shift+F23.
-KDE calls that "Meta+Shift+Touchpad Off", so that is the name in the `.desktop` files.
+Depending on the keyboard layout, KDE sees it as "Meta+Shift+F23" or as
+"Meta+Shift+Touchpad Off", so the `.desktop` files list both names.
 Ctrl and Alt are free to add, so there are four combinations: Copilot (ask), Ctrl+Copilot
 (eli12), Alt+Copilot (translate to Dutch) and Ctrl+Alt+Copilot (still free). AltGr works as
 Alt here.
