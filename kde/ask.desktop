@@ -5,4 +5,4 @@ Comment=Chat with the local LLM; follow-up questions keep the conversation
 Exec=ask --popup
 Icon=dialog-question
 Categories=Utility;
-X-KDE-Shortcuts=Meta+Shift+Q
+X-KDE-Shortcuts=Meta+Shift+Q,Meta+Shift+Touchpad Off

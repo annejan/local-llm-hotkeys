@@ -179,9 +179,9 @@ chmod +x ~/.local/share/kio/servicemenus/uktr.desktop
 
 - Meta+Shift+T: translate the clipboard
 - Meta+Shift+Y: translate a screen region
-- Meta+Shift+E or the Copilot key: explain the clipboard with eli12
+- Meta+Shift+E or Ctrl+Copilot: explain the clipboard with eli12
 - Meta+Shift+F: fix spelling of the clipboard with fixtext
-- Meta+Shift+Q: chat with ask
+- Meta+Shift+Q or the Copilot key: chat with ask
 - Dolphin right-click on a document: "Translate to English (uktr)" and "Explain like I'm 12 (eli12)"
 
 The shortcuts come from `X-KDE-Shortcuts` in the `.desktop` files. After `kbuildsycoca6`,
@@ -189,7 +189,9 @@ KDE (Plasma 6) registers them at once; it does not write default shortcuts to
 `~/.config/kglobalshortcutsrc`. To change a key, use System Settings → Shortcuts.
 
 The Copilot key (on newer laptops, such as the ThinkPad T14 Gen 6) sends Meta+Shift+F23.
-KDE calls that "Meta+Shift+Touchpad Off", so that is the name in `eli12-clip.desktop`.
+KDE calls that "Meta+Shift+Touchpad Off", so that is the name in the `.desktop` files.
+Ctrl and Alt are still free, so there are four combinations: Copilot (ask), Ctrl+Copilot
+(eli12), Alt+Copilot and Ctrl+Alt+Copilot.
 
 ## Backend: FastFlowLM on the NPU
 
