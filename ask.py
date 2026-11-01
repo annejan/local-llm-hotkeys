@@ -179,8 +179,8 @@ def terminal(chat=None):
                 print(piece, end="", flush=True)
         except KeyboardInterrupt:
             print(" [stopped]", end="")
-        except OSError as e:
-            print(f"[ask failed: {e}]", end="")
+        except Exception as e:
+            print(f"[ask failed: {type(e).__name__}: {e}]", end="")
         finally:
             answer.close()
         print()
@@ -368,8 +368,8 @@ def window():
                         result = "stopped"
                         break
                     self.stream.piece.emit(piece)
-            except OSError as e:
-                result = f"ask failed: {e}"
+            except Exception as e:  # anything, or the window stays busy forever
+                result = f"ask failed: {type(e).__name__}: {e}"
             finally:
                 # Closes the connection (the server stops generating) and puts the answer in the
                 # history. Only then report done, so the window shows the saved answer.
