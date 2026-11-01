@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=fixtext: fix clipboard spelling
+Comment=Fix spelling and grammar of the copied text; the fixed text goes back on the clipboard
+Exec=fixtext clip
+Icon=tools-check-spelling
+Categories=Utility;
+X-KDE-Shortcuts=Meta+Shift+F

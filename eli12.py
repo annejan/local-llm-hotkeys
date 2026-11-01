@@ -12,12 +12,10 @@ Uses the same backend and config file as uktr (~/.config/uktr/config, UKTR_URL).
   ELI12_MODEL   default qwen3.5:9b (any chat model; translation-only models do not work)
   ELI12_LANG    default nl
 """
-import json
 import os
 import re
 import subprocess
 import sys
-import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 import uktr  # noqa: E402  (shares config, file extraction and the popup)
@@ -52,14 +50,7 @@ def explain(text, lang):
     The model labels the text first. A small model ignores "no to-do line for documentation",
     but it labels reliably, so for a [document] the code keeps only the first paragraph."""
     rules = RULES.format(todo=TODO[lang], you=YOU[lang], lang=LANGS[lang], n=SENTENCES)
-    body = {"model": MODEL, "stream": False, "temperature": 0.3,
-            "chat_template_kwargs": {"enable_thinking": False},
-            "messages": [{"role": "system", "content": rules},
-                         {"role": "user", "content": text[:MAX_CHARS]}]}
-    req = urllib.request.Request(uktr.URL + "/chat/completions", json.dumps(body).encode(),
-                                 {"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=600) as r:
-        out = json.load(r)["choices"][0]["message"]["content"].strip()
+    out = uktr.chat(rules, text[:MAX_CHARS], MODEL, temperature=0.3)
     m = KIND.match(out)
     if not m:
         return out

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=ask: quick question to the local LLM
+Comment=Ask the local LLM a question; the answer opens in a popup window
+Exec=ask --popup
+Icon=dialog-question
+Categories=Utility;
+X-KDE-Shortcuts=Meta+Shift+Q

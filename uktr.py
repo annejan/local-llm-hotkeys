@@ -56,6 +56,17 @@ def translate(text, model=None):
         return json.load(r)["choices"][0]["message"]["content"].strip()
 
 
+def chat(system, text, model, temperature=0.2, timeout=600):
+    """One chat request with thinking off. Used by eli12, fixtext and ask."""
+    body = {"model": model, "stream": False, "temperature": temperature,
+            "chat_template_kwargs": {"enable_thinking": False},
+            "messages": [{"role": "system", "content": system},
+                         {"role": "user", "content": text}]}
+    req = urllib.request.Request(URL + "/chat/completions", json.dumps(body).encode(),
+                                 {"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.load(r)["choices"][0]["message"]["content"].strip()
+
 def chunks(text):
     buf = ""
     for para in text.split("\n\n"):

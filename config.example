@@ -27,3 +27,7 @@ UKTR_LISTEN_MODEL=hy-mt2-flash:1.8b
 #ELI12_MODEL=qwen3.5:9b
 #ELI12_LANG=nl   # nl, en or both
 #ELI12_SENTENCES=5   # longest explanation, in sentences
+
+# fixtext and ask: chat models
+#FIX_MODEL=qwen3.5:9b
+#ASK_MODEL=qwen3.5:9b

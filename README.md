@@ -1,9 +1,11 @@
 # local-llm-hotkeys
 
-KDE hotkeys and Dolphin menu actions that send text to a local LLM. Two tools:
+KDE hotkeys and Dolphin menu actions that send text to a local LLM. Four tools:
 
 - **uktr**: rough translation of Ukrainian (or any other language) to English.
 - **eli12**: explains a text like you are 12.
+- **fixtext**: fixes spelling and grammar of the clipboard.
+- **ask**: a quick question in an input box, the answer in a popup.
 
 Both talk to any OpenAI-compatible server. The default setup runs everything on the
 AMD Ryzen AI NPU with [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM), so the GPU
@@ -84,6 +86,42 @@ Example (a long email from a facility team about a new booking system and locker
 
 For an email in Thunderbird: select the text, press Ctrl+C, then Meta+Shift+E.
 
+## fixtext: fix spelling and grammar
+
+Copy a text, press Meta+Shift+F, and paste. `fixtext` fixes spelling, grammar, punctuation
+and capitalization in any language. It does not translate or rephrase, and keeps line breaks,
+names, URLs and code.
+
+| Command | Input | Output |
+|---|---|---|
+| `fixtext clip` | clipboard | clipboard |
+| `fixtext < text` | stdin | stdout |
+| `fixtext FILE` | same file types as uktr | stdout |
+
+With `clip` you get two notifications: "fixing N words…" at the start, and at the end the
+changes (`wich → which`, `tomorow? → tomorrow?`) with the fixed text on the clipboard. If
+there are no mistakes, the clipboard stays as it was. A short paragraph takes 3–6 s on the
+NPU.
+
+The model sometimes answers a question in the text instead of fixing it. If a fixed part is
+much shorter or longer than the original, `fixtext` keeps the original part. Model:
+`FIX_MODEL`, default `qwen3.5:9b`. Text over 20,000 characters is refused.
+
+## ask: a quick question
+
+Meta+Shift+Q opens an input box. Type a question; the answer opens in a popup window and is
+also copied to the clipboard. The model answers in the language of the question and knows
+today's date.
+
+| Command | Input | Output |
+|---|---|---|
+| `ask --popup` | input box | popup window |
+| `ask QUESTION...` | command line | stdout |
+| `ask < question` | stdin | stdout |
+
+Model: `ASK_MODEL`, default `qwen3.5:9b`. A short answer takes about 3 s, a how-to with
+steps about 20 s. A 9B model makes mistakes, so check facts that matter.
+
 ## Requirements
 
 - Python 3.9+
@@ -100,13 +138,16 @@ git clone https://github.com/annejan/local-llm-hotkeys.git
 cd local-llm-hotkeys
 ln -s "$PWD/uktr.py" ~/.local/bin/uktr
 ln -s "$PWD/eli12.py" ~/.local/bin/eli12
+ln -s "$PWD/fixtext.py" ~/.local/bin/fixtext
+ln -s "$PWD/ask.py" ~/.local/bin/ask
 mkdir -p ~/.config/uktr && cp config.example ~/.config/uktr/config
 ```
 
 KDE integration (optional):
 
 ```sh
-cp kde/uktr-clip.desktop kde/uktr-shot.desktop kde/eli12-clip.desktop ~/.local/share/applications/
+cp kde/uktr-clip.desktop kde/uktr-shot.desktop kde/eli12-clip.desktop \
+   kde/fixtext-clip.desktop kde/ask.desktop ~/.local/share/applications/
 kbuildsycoca6
 mkdir -p ~/.local/share/kio/servicemenus
 cp kde/uktr-servicemenu.desktop ~/.local/share/kio/servicemenus/uktr.desktop
@@ -116,6 +157,8 @@ chmod +x ~/.local/share/kio/servicemenus/uktr.desktop
 - Meta+Shift+T: translate the clipboard
 - Meta+Shift+Y: translate a screen region
 - Meta+Shift+E: explain the clipboard with eli12
+- Meta+Shift+F: fix spelling of the clipboard with fixtext
+- Meta+Shift+Q: ask a question
 - Dolphin right-click on a document: "Translate to English (uktr)" and "Explain like I'm 12 (eli12)"
 
 The shortcuts come from `X-KDE-Shortcuts` in the `.desktop` files. After `kbuildsycoca6`,
@@ -191,6 +234,8 @@ override the file. See `config.example`.
 | `ELI12_MODEL` | `qwen3.5:9b` | chat model for `eli12` |
 | `ELI12_SENTENCES` | `5` | longest explanation for `eli12`, in sentences |
 | `ELI12_LANG` | `nl` | language for `eli12`: `nl`, `en` or `both` |
+| `FIX_MODEL` | `qwen3.5:9b` | chat model for `fixtext` |
+| `ASK_MODEL` | `qwen3.5:9b` | chat model for `ask` |
 
 Example, one-off Russian to Dutch:
 
