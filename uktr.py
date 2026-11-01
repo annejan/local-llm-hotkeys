@@ -99,8 +99,8 @@ def popup(title, text):
     os.unlink(f.name)
 
 
-def notify(msg):
-    subprocess.run(["notify-send", "-a", "uktr", "-t", "3000", "uktr", msg])
+def notify(msg, app="uktr"):
+    subprocess.run(["notify-send", "-a", app, "-t", "3000", app, msg])
 
 
 def gui(text, source):

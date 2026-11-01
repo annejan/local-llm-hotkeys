@@ -96,14 +96,14 @@ def main(argv):
 
     if not text.strip():
         msg = f"nothing to explain ({title} is empty)"
-        return uktr.notify(msg) if popup else sys.exit(msg)
+        return uktr.notify(msg, "eli12") if popup else sys.exit(msg)
     if popup:
-        uktr.notify(f"explaining {title}…")
+        uktr.notify(f"explaining {title}…", "eli12")
     try:
         out = "\n\n".join(explain(text, lg) for lg in langs)
     except OSError as e:
         msg = f"eli12 failed: {e}"
-        return uktr.notify(msg) if popup else sys.exit(msg)
+        return uktr.notify(msg, "eli12") if popup else sys.exit(msg)
     if popup:
         uktr.popup(f"eli12: {title}", out)
     else:
