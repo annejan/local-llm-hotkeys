@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 import uktr  # noqa: E402  (shares config, file extraction and the popup)
 
 MODEL = uktr.conf.get("ELI12_MODEL", "qwen3.5:9b")
+SENTENCES = int(uktr.conf.get("ELI12_SENTENCES", "5"))  # length of the explanation
 MAX_CHARS = 60000  # ~20k tokens; longer text is cut, the start of a README says the most
 LANGS = {"nl": "Dutch", "en": "English"}
 
@@ -33,7 +34,7 @@ RULES = ("You explain texts to a smart 12-year-old. The text can be anything: an
          "First line: write [message] if the text is addressed to the reader and asks them for "
          "something (an email, a letter, a notice), or [document] if it is documentation, an article "
          "or a description (a README is a [document]).\n"
-         "Then, in at most 3 short sentences (each under 20 words), say what the text is about and "
+         "Then, in at most {n} short sentences (each under 25 words), say what the text is about and "
          "what matters most. Skip greetings, politeness, background and repetition. Use everyday "
          "words; explain or avoid jargon and abbreviations. Use a comparison from normal life only if "
          "it really helps. Only state facts that are in the text; do not guess consequences.\n"
@@ -50,7 +51,7 @@ def explain(text, lang):
 
     The model labels the text first. A small model ignores "no to-do line for documentation",
     but it labels reliably, so for a [document] the code keeps only the first paragraph."""
-    rules = RULES.format(todo=TODO[lang], you=YOU[lang], lang=LANGS[lang])
+    rules = RULES.format(todo=TODO[lang], you=YOU[lang], lang=LANGS[lang], n=SENTENCES)
     body = {"model": MODEL, "stream": False, "temperature": 0.3,
             "chat_template_kwargs": {"enable_thinking": False},
             "messages": [{"role": "system", "content": rules},

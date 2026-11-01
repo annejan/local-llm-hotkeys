@@ -44,7 +44,7 @@ konsole -e uktr listen --orig
 ## eli12: explain it like I'm 12
 
 `eli12` is a second tool in this repository. It reads a text (a long boring email, a
-README, an article, a PDF) and says in at most 3 short sentences what it is about and what
+README, an article, a PDF) and says in at most 5 short sentences what it is about and what
 matters most, in plain words.
 
 If the text asks you to do something, as an email or letter does, `eli12` ends with a line
@@ -75,7 +75,7 @@ Example (a long email from a facility team about a new booking system and locker
 > Te doen: […] terugkerende werkplekreserveringen in FlexDesk 4 uiterlijk vrijdag 12 december
 > […]; persoonlijke eigendommen uit kluisjes op de tweede verdieping vóór maandag 8 december.
 
-For an email in Thunderbird: select the text, copy it, and run `eli12 clip`.
+For an email in Thunderbird: select the text, press Ctrl+C, then Meta+Shift+E.
 
 ## Requirements
 
@@ -97,7 +97,8 @@ mkdir -p ~/.config/uktr && cp config.example ~/.config/uktr/config
 KDE integration (optional):
 
 ```sh
-cp kde/uktr-clip.desktop kde/uktr-shot.desktop ~/.local/share/applications/
+cp kde/uktr-clip.desktop kde/uktr-shot.desktop kde/eli12-clip.desktop ~/.local/share/applications/
+kbuildsycoca6
 mkdir -p ~/.local/share/kio/servicemenus
 cp kde/uktr-servicemenu.desktop ~/.local/share/kio/servicemenus/uktr.desktop
 chmod +x ~/.local/share/kio/servicemenus/uktr.desktop
@@ -105,10 +106,12 @@ chmod +x ~/.local/share/kio/servicemenus/uktr.desktop
 
 - Meta+Shift+T: translate the clipboard
 - Meta+Shift+Y: translate a screen region
+- Meta+Shift+E: explain the clipboard with eli12
 - Dolphin right-click on a document: "Translate to English (uktr)" and "Explain like I'm 12 (eli12)"
 
-The shortcuts come from `X-KDE-Shortcuts` in the `.desktop` files. If they do not work
-after you log in again, set them in System Settings → Shortcuts.
+The shortcuts come from `X-KDE-Shortcuts` in the `.desktop` files. After `kbuildsycoca6`,
+KDE (Plasma 6) registers them at once; it does not write default shortcuts to
+`~/.config/kglobalshortcutsrc`. To change a key, use System Settings → Shortcuts.
 
 ## Backend: FastFlowLM on the NPU
 
@@ -177,6 +180,7 @@ override the file. See `config.example`.
 | `UKTR_LISTEN_MAX` | `12` | longest audio chunk, in seconds |
 | `UKTR_SILENCE` | `300` | int16 RMS level that counts as quiet |
 | `ELI12_MODEL` | `qwen3.5:9b` | chat model for `eli12` |
+| `ELI12_SENTENCES` | `5` | longest explanation for `eli12`, in sentences |
 | `ELI12_LANG` | `nl` | language for `eli12`: `nl`, `en` or `both` |
 
 Example, one-off Russian to Dutch:
