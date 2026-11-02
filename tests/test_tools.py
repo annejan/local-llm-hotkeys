@@ -1,4 +1,5 @@
 """Tests for the logic that needs no LLM server. Run: python3 -m unittest discover -s tests"""
+import builtins
 import importlib.util
 import io
 import os
@@ -200,6 +201,25 @@ class TranslatePrompt(unittest.TestCase):
         finally:
             llm.chat = real
         self.assertEqual(sent, [0])
+
+
+class Resume(unittest.TestCase):
+    def test_saved_text_is_printed_plain(self):
+        """A resumed chat holds copied text (uktr, eli12): no escape codes to the terminal."""
+        chat = ask.Chat(turns=[{"role": "user", "content": "a\x1b]52;c;eA==\x07b \u202eevil"},
+                               {"role": "assistant", "content": "c\x1b[2Jd"}])
+        out, real_input, real_stdout = io.StringIO(), builtins.input, sys.stdout
+
+        def eof(prompt=""):
+            raise EOFError  # Ctrl+D at once: only the saved turns are printed
+        builtins.input, sys.stdout = eof, out
+        try:
+            ask.terminal(chat)
+        finally:
+            builtins.input, sys.stdout = real_input, real_stdout
+        self.assertNotIn("\x1b", out.getvalue())
+        self.assertNotIn("\u202e", out.getvalue())
+        self.assertIn("a]52;c;eA==b", out.getvalue())
 
 
 class CanWindow(unittest.TestCase):

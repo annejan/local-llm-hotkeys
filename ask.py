@@ -321,11 +321,12 @@ def terminal(chat=None):
     chat = chat or Chat(save=True)
     print(f"ask {MODEL}: /new starts a new chat, Ctrl+D or /quit quits.", file=sys.stderr)
     for t in chat.turns:  # a resumed chat: show it first
+        # plain(): a saved question can be a copied text (uktr, eli12) with escape codes in it
         if t["role"] == "user":
             shots = " [screenshot]" * len(images_of(t["content"]))
-            print(f"\n> {text_of(t['content'])}{shots}")
+            print(f"\n> {llm.plain(text_of(t['content']))}{shots}")
         else:
-            print(t["content"])
+            print(llm.plain(t["content"]))
     while True:
         try:
             question = input("\n> ").strip()
