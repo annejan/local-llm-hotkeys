@@ -6,8 +6,8 @@
 
 <a href="https://annejan.com/ai-key/"><img src="docs/keyboard.webp" width="600" alt="A ThinkPad keyboard: Alt Gr, then the AI key with a hand-drawn Ai on it, then Ctrl."></a>
 
-New laptops have a Copilot key. On Linux it does nothing. This project gives it four jobs,
-and runs all of them on the AMD Ryzen AI NPU that is already in the laptop. There is no cloud,
+Many new laptops have a Copilot key. On Linux it does nothing. This project gives it four
+jobs, and runs all of them on the AMD Ryzen AI NPU that is already in the laptop. There is no cloud,
 no account and no subscription. Nothing leaves your computer, it works offline, and the GPU
 stays free.
 
