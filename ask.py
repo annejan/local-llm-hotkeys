@@ -326,7 +326,7 @@ def window(first=None, chat=None, title=None):
     another tool). title: the window title."""
     try:
         from PySide6.QtCore import QByteArray, QObject, Qt, QTimer, Signal
-        from PySide6.QtGui import QDesktopServices, QImage, QKeySequence, QShortcut, QTextDocument
+        from PySide6.QtGui import QDesktopServices, QIcon, QImage, QKeySequence, QShortcut, QTextDocument
         from PySide6.QtWidgets import (
             QApplication,
             QHBoxLayout,
@@ -624,7 +624,9 @@ def window(first=None, chat=None, title=None):
 
     app = QApplication(sys.argv[:1])
     app.setApplicationName("ask")
-    app.setDesktopFileName("ask")
+    app.setDesktopFileName("ask")  # Plasma takes the icon from ask.desktop; this one is for elsewhere
+    app.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                         "kde", "icons", "local-llm-hotkeys.svg")))
     w = Window(first, chat, title)
     w.show()
     w.raise_()
