@@ -252,13 +252,15 @@ def run(cmd, what):
 def extract(path):
     """The text of a document: .pdf .epub .docx .odt .html, or any text file."""
     ext = os.path.splitext(path)[1].lower()
+    path = os.path.abspath(path)  # a file name that starts with "-" is not read as an option
     if ext == ".pdf":
         text = run(["pdftotext", "-layout", path, "-"], "PDF files")
         if not text.strip():
             raise Error("no text layer in this PDF (scanned?); OCR it first, e.g. ocrmypdf")
         return text
     if ext in (".epub", ".docx", ".html", ".htm", ".odt"):
-        return run(["pandoc", "-t", "plain", "--wrap=none", path], f"{ext} files")
+        # --sandbox: pandoc reads no other file and nothing from the network for this document.
+        return run(["pandoc", "--sandbox", "-t", "plain", "--wrap=none", path], f"{ext} files")
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
             return f.read()
