@@ -12,7 +12,10 @@ Uses the same backend and config file as uktr (~/.config/uktr/config, UKTR_URL).
   ELI12_MODEL       default qwen3.5:9b (any chat model; translation-only models do not work)
   ELI12_LANG        default your language (UKTR_LANGUAGE, else the desktop's)
   ELI12_SENTENCES   default 5 (longest explanation)
+  ELI12_WINDOW      default 1: clip and --popup open the ask window (the explanation streams
+                    in, and you can ask about the text); 0 = a plain text box (kdialog)
 """
+import importlib.util
 import os
 import re
 import sys
@@ -21,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 import llm
 
 MODEL = llm.conf.get("ELI12_MODEL", "qwen3.5:9b")
+WINDOW = llm.conf.get("ELI12_WINDOW", "1") != "0"
 SENTENCES = int(llm.conf.get("ELI12_SENTENCES", "5"))
 MAX_CHARS = 60000  # ~20k tokens; longer text is cut, the start of a README says the most
 # The label of the to-do line, per language. Other languages get the English label.
@@ -41,6 +45,11 @@ RULES = ("You explain texts to a smart 12-year-old. The text can be anything: an
          "reader must take with its deadline. Copy dates exactly as the text writes them: never add a "
          "year, a weekday or a date that is not in the text.\n"
          "{you}Write only in {lang}, with no other heading. Nothing else.")
+# Added to ask's rules for questions after the explanation: a small model otherwise fills gaps
+# in a letter with what such letters usually say ("you can still pay without extra costs").
+FOLLOW_UP = (" The first user message is a text that the user wants to understand. Answer questions "
+             "about it only with what that text says. If the text does not say it, say that it does "
+             "not, and do not guess or add what such texts usually say.")
 KIND = re.compile(r"^\W*\[?(message|document)\]?\W*\n?", re.I)
 
 
@@ -58,13 +67,30 @@ def clean(out):
     return out
 
 
+def rules(lang):
+    """The system prompt for one language (a code such as nl, or a name)."""
+    code, name = llm.parse_language(lang)
+    return RULES.format(todo=TODO.get(code, "To do:"), you=YOU.get(code, ""), lang=name, n=SENTENCES)
+
+
 def explain(text, lang):
     """One explanation in one language (a code such as nl). Both = call this twice: one
     language per request is far more reliable than asking a small model for two sections."""
-    code, name = llm.parse_language(lang)
-    rules = RULES.format(todo=TODO.get(code, "To do:"), you=YOU.get(code, ""), lang=name,
-                         n=SENTENCES)
-    return clean(llm.complete(rules, text[:MAX_CHARS], MODEL, temperature=0.3))
+    return clean(llm.complete(rules(lang), text[:MAX_CHARS], MODEL, temperature=0.3))
+
+
+def window_ok(langs):
+    """The ask window can show this: one language, PySide6 there, not switched off."""
+    return WINDOW and len(langs) == 1 and importlib.util.find_spec("PySide6") is not None
+
+
+def explain_window(text, title, lang):
+    """The explanation in the ask window: it streams in, Esc stops it, and you can ask about
+    the text. The first answer follows eli12's rules; follow-up questions are normal ask
+    questions, with the text and the explanation as context."""
+    import ask
+    chat = ask.Chat(save=True, model=MODEL, kind="eli12", first=(rules(lang), clean), follow_up=FOLLOW_UP)
+    ask.window(first=text[:MAX_CHARS], chat=chat, title=f"eli12: {title}")
 
 
 def main(argv):
@@ -94,6 +120,8 @@ def main(argv):
             text, title = sys.stdin.read(), "stdin"
         if not text.strip():
             raise llm.Error(f"nothing to explain ({title} is empty)")
+        if gui and window_ok(langs):
+            return explain_window(text, title, langs[0])
         if gui:
             llm.notify(f"explaining {title}…", "eli12")
         out = "\n\n".join(explain(text, lg) for lg in langs)

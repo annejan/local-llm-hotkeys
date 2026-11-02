@@ -174,6 +174,63 @@ class Audio(unittest.TestCase):
         self.assertGreater(llm.rms(loud + b"\x01"), 0)
 
 
+class Eli12Chat(unittest.TestCase):
+    """eli12 in the ask window: its rules and clean() for the first answer, ask's after that."""
+
+    def chat(self):
+        return ask.Chat(model="m-eli12", kind="eli12", first=("ELI12 RULES", eli12.clean), follow_up=" FOLLOW")
+
+    def stream(self, chat, question, pieces):
+        real, sent = llm.chat_stream, []
+        llm.chat_stream = lambda messages, model, cancel=None: sent.append((messages, model)) or iter(pieces)
+        try:
+            shown = [chat.shown(a) for a in ("".join(pieces[:i]) for i in range(1, len(pieces) + 1))]
+            list(chat.ask(question))
+        finally:
+            llm.chat_stream = real
+        return sent[0], shown
+
+    def test_first_answer_then_follow_up(self):
+        chat = self.chat()
+        (messages, model), shown = self.stream(chat, "Geachte heer, betaal 10 euro.",
+                                               ["[mess", "age]\nJe moet betalen.", "\n\nTe doen: betaal"])
+        self.assertEqual((messages[0]["content"], model), ("ELI12 RULES", "m-eli12"))
+        self.assertEqual(shown[0], "")  # a half label is not shown
+        self.assertEqual(shown[1], "Je moet betalen.")
+        self.assertEqual(chat.turns[-1]["content"], "Je moet betalen.\n\nTe doen: betaal")
+        (messages, model), _ = self.stream(chat, "Wat als ik te laat ben?", ["[document] Dan ", "kost het meer."])
+        self.assertIn("helpful assistant", messages[0]["content"])  # ask's rules, not eli12's
+        self.assertTrue(messages[0]["content"].endswith(" FOLLOW"))
+        self.assertEqual(model, "m-eli12")
+        self.assertEqual(chat.turns[-1]["content"], "[document] Dan kost het meer.")  # not cleaned
+
+    def test_title_save_and_load(self):
+        with tempfile.TemporaryDirectory() as d:
+            real = ask.SAVE_DIR, ask.SAVE
+            ask.SAVE_DIR, ask.SAVE = d, True
+            try:
+                chat = ask.Chat(save=True, model="m", kind="eli12", first=("R", eli12.clean),
+                                turns=[{"role": "user", "content": "Geachte heer Brouwer,"},
+                                       {"role": "assistant", "content": "De **gemeente** wil geld."}])
+                chat.write()
+                self.assertEqual(chat.title, "💡 De gemeente wil geld.")
+                loaded = ask.Chat.load(chat.path)
+                self.assertEqual((loaded.kind, loaded.model, loaded.follow_up), ("eli12", eli12.MODEL, eli12.FOLLOW_UP))
+                self.assertEqual(ask.saved_chats()[0][1], "💡 De gemeente wil geld.")
+            finally:
+                ask.SAVE_DIR, ask.SAVE = real
+
+    def test_window_ok(self):
+        real = eli12.WINDOW
+        try:
+            eli12.WINDOW = True
+            self.assertFalse(eli12.window_ok(["nl", "en"]))  # both: two explanations, text box
+            eli12.WINDOW = False
+            self.assertFalse(eli12.window_ok(["nl"]))
+        finally:
+            eli12.WINDOW = real
+
+
 class Dictate(unittest.TestCase):
     def test_stop_signal_is_caught(self):
         """After catch_stop(), the hotkey's SIGUSR1 ends the recording, not the process."""
