@@ -296,9 +296,31 @@ class UktrWindow(unittest.TestCase):
             answer = chat.ask("Привіт XYZ", cancel)
             next(answer)
             cancel.cancel()
-            answer.close()  # what the window does on Stop
+            answer.close()  # the reader leaves: Ctrl+C, an error, a break
             self.assertEqual(done, [])
             self.assertEqual(chat.turns[-1]["content"], "T(XYZ)")  # kept in the history
+        finally:
+            llm.chat_stream = real
+
+    def test_not_copied_when_the_stream_ends_after_stop(self):
+        """The window's usual Stop: cancel() makes the stream end by itself, and the reader
+        reads on to that end; nothing closes the generator. Only the check that the answer was
+        complete keeps a half translation off the clipboard."""
+        def stream(messages, model, temperature=0.5, timeout=600, cancel=None):
+            yield "first "
+            if cancel and cancel.cancelled:
+                return  # like llm.chat_stream once cancel() ended the connection
+            yield "second"
+        done, real = [], llm.chat_stream
+        llm.chat_stream = stream
+        try:
+            chat, cancel = self.chat(done), llm.Cancel()
+            answer = chat.ask("Привіт XYZ", cancel)
+            self.assertEqual(next(answer), "first ")
+            cancel.cancel()
+            self.assertEqual(list(answer), [])  # read on to the end, as Window.work does
+            self.assertEqual(done, [])
+            self.assertEqual(chat.turns[-1]["content"], "first")  # kept in the history
         finally:
             llm.chat_stream = real
 
