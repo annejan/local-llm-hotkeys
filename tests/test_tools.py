@@ -174,6 +174,34 @@ class Audio(unittest.TestCase):
         self.assertGreater(llm.rms(loud + b"\x01"), 0)
 
 
+class ModelPerUse(unittest.TestCase):
+    def test_file_model(self):
+        used = []
+        real = uktr.translate, llm.extract, llm.notify, uktr.FILE_MODEL
+        uktr.translate = lambda text, model=None, to=None: used.append(model) or text
+        llm.extract = lambda path: "a\n\nb"
+        llm.notify = lambda *args, **kwargs: None
+        uktr.FILE_MODEL = "slow-but-careful"
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                uktr.translate_file(os.path.join(d, "doc.txt"), os.path.join(d, "doc.nl.md"), notify=True)
+        finally:
+            uktr.translate, llm.extract, llm.notify, uktr.FILE_MODEL = real
+        self.assertEqual(used, ["slow-but-careful"])
+
+    def test_dictate_model(self):
+        used = []
+        real = llm.transcribe, uktr.translate, dictate.MODEL
+        llm.transcribe = lambda audio, lang: "hallo"
+        uktr.translate = lambda text, model=None, to=None: used.append((model, to)) or "hello"
+        dictate.MODEL = "fast"
+        try:
+            self.assertEqual(dictate.text_of(b"audio", True), "hello")
+        finally:
+            llm.transcribe, uktr.translate, dictate.MODEL = real
+        self.assertEqual(used, [("fast", dictate.TO)])
+
+
 class Dictate(unittest.TestCase):
     def test_stop_signal_is_caught(self):
         """After catch_stop(), the hotkey's SIGUSR1 ends the recording, not the process."""
