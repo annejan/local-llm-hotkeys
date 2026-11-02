@@ -33,18 +33,30 @@ FILE_MODEL = conf.get("UKTR_FILE_MODEL") or MODEL
 SUFFIX, TO = llm.parse_language(conf["UKTR_TO"]) if conf.get("UKTR_TO") else llm.language()
 # SUFFIX names the output file: FILE.nl.md for Dutch, FILE.en.md for English, ...
 
-SYSTEM = ("You are a translator. Translate the user's text to {to}. "
-          "Output only the translation, keep paragraph breaks and markdown, add no comments.")
+# The instruction goes in the user message, with the language code, not in a system prompt:
+# with a system prompt translategemma translated Ukrainian news into Portuguese, and a
+# Ukrainian sentence into Russian, when Dutch was asked (16 texts into Dutch and English: 14
+# right with a system prompt, 16 with this). Temperature 0: at a higher temperature it also
+# echoes a longer text untranslated now and then.
+PROMPT = ("Translate the following text into {to} ({code}). Produce only the {to} translation, "
+          "without any additional explanations or commentary. Keep paragraph breaks and markdown."
+          "\n\n\n{text}")
+
+
+def messages(text, model, to):
+    """The request to translate text to `to` (a language name or code) with this model."""
+    code, name = llm.parse_language(to)
+    if "hy-mt" in model.lower():
+        # Hunyuan-MT is tuned on this exact user-only prompt; anything else makes it worse.
+        return [{"role": "user", "content": f"Translate the following segment into {name}, "
+                 f"without additional explanation.\n\n{text}"}]
+    return [{"role": "user", "content": PROMPT.format(to=name, code=code, text=text)}]
 
 
 def translate(text, model=None, to=None):
     """Translate text to `to` (a language name; default TO, your language)."""
     model, to = model or MODEL, to or TO
-    if "hy-mt" in model.lower():
-        # Hunyuan-MT is tuned on this exact user-only prompt; a system prompt makes it worse.
-        return llm.chat([{"role": "user", "content": f"Translate the following segment into "
-                          f"{to}, without additional explanation.\n\n{text}"}], model)
-    return llm.complete(SYSTEM.format(to=to), text, model)
+    return llm.chat(messages(text, model, to), model, temperature=0)
 
 
 def translate_long(text, out, progress=False, model=None):
