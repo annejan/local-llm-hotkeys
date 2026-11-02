@@ -431,9 +431,10 @@ openSUSE Tumbleweed, kernel 7.2+. Without such an NPU, use ollama (see [Models](
 
 - `translategemma:4b`: a translation model. Better than Hy-MT2 with slang and abbreviations,
   but about 3.5x slower (6.3 s against 1.8 s for two paragraphs). The default for `clip`,
-  `shot` and files. uktr gives it the instruction and the language code in the user message,
-  at temperature 0: with a system prompt (up to v0.2.2) it translated a Ukrainian news text
-  into Portuguese, and a Ukrainian sentence into Russian, when Dutch was asked.
+  `shot` and files. uktr sends it the prompt from its model card (without the source
+  language, which uktr does not know), at temperature 0. With a system prompt (up to v0.2.2)
+  it translated a Ukrainian news text into Portuguese, and a Ukrainian sentence into Russian,
+  when Dutch was asked; with a short instruction it left a long Ukrainian text untranslated.
 - `hy-mt2-flash:1.8b` (Hunyuan Hy-MT2): a model only for translation. It is fast on the NPU
   (about 50 tokens/s output) and gives good results; the example config uses it for
   `listen`, where speed matters. uktr sends it the user-only prompt it was trained on when
