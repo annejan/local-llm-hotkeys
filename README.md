@@ -227,9 +227,10 @@ that has the focus: a chat, an email, a terminal.
 You speak your language (`DICTATE_LANG`, default `UKTR_LANGUAGE`). The text is typed by
 pasting: it goes on the clipboard and the primary selection, and a virtual keyboard presses
 Shift+Insert, which pastes in Qt and GTK apps, browsers and Konsole. The virtual keyboard
-needs write access to `/dev/uinput`. KDE Connect installs a udev rule that gives it to the logged-in user (on Debian and Ubuntu, see [Requirements](#requirements));
-check with `test -w /dev/uinput && echo ok`. Without it, the text stays on the clipboard for
-Ctrl+V.
+needs write access to `/dev/uinput` (check with `test -w /dev/uinput && echo ok`). Without
+it, dictate does not type: the text stays on the clipboard, a notification shows it, and you
+press Ctrl+V. See [Requirements](#requirements) for where the access comes from, and what it
+allows.
 
 With `--translate` (Meta+Ctrl+Shift+D) you speak your language and the text is typed in
 another one: `DICTATE_TO`, default English. Handy for an email or a chat with someone who does
@@ -275,14 +276,30 @@ sudo pacman -S --needed wl-clipboard kdialog libnotify spectacle pyside6 \
 | poppler (`pdftotext`), pandoc | PDF, and epub/docx/odt/html files |
 | pulseaudio-utils (`parec`) | `uktr listen`, `dictate` |
 
-`dictate` types with a virtual keyboard, which needs write access to `/dev/uinput`. KDE
-Connect gives the logged-in user that access on openSUSE, Fedora and Arch. On Debian and
-Ubuntu, add the same rule from this repository:
+`dictate` types with a virtual keyboard, which needs write access to `/dev/uinput`. The rule
+is optional: without it, `dictate` leaves the text on the clipboard and you press Ctrl+V.
+
+On openSUSE, Fedora and Arch you already have the access when KDE Connect (installed with
+Plasma) or the Steam udev rules are installed: they add the same rule. Check it, and see which
+package added it:
+
+```sh
+getfacl -p /dev/uinput | grep "user:$USER"    # user:you:rw- = you have it
+grep -l uinput /usr/lib/udev/rules.d/* /etc/udev/rules.d/* 2>/dev/null
+```
+
+On Debian and Ubuntu, KDE Connect does not add it. To allow it, add the rule from this
+repository:
 
 ```sh
 sudo cp udev/60-local-llm-hotkeys-uinput.rules /etc/udev/rules.d/
 sudo udevadm control --reload && sudo udevadm trigger --sysname-match=uinput
 ```
+
+What the rule allows: every program that you run can make a virtual keyboard or mouse, without
+asking, and type or click in any window. On Wayland, programs normally cannot do that to other
+windows. So add the rule only if you want dictate to type for you. To remove it again:
+`sudo rm /etc/udev/rules.d/60-local-llm-hotkeys-uinput.rules`, then the `udevadm` line above.
 
 Kubuntu 24.04 has Plasma 5 and no PySide6: the commands work, but the hotkeys are not tested
 there and `ask` opens in Konsole.

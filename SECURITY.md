@@ -25,8 +25,14 @@ Release files are attested by GitHub and `SHA256SUMS` is signed with the key abo
 ## Things to know
 
 - `dictate` creates a virtual keyboard through `/dev/uinput` to paste text. The udev rule in
-  `udev/` gives the logged-in user that access, the same rule that KDE Connect and Steam
-  install. Any program of that user can then create input devices.
+  `udev/` gives the logged-in user that access. Any program of that user can then create input
+  devices and type or click in any window, which Wayland otherwise prevents. KDE Connect
+  (openSUSE, Fedora, Arch) and the Steam udev rules install the same rule, so on those systems
+  this access is usually there already; on Debian and Ubuntu only this rule adds it. The rule
+  is optional: without it, dictate leaves the text on the clipboard.
+  The RemoteDesktop portal is not used instead: a script cannot identify itself to it, so after
+  one "Allow" the saved permission is open to every program of the user, and asking at every
+  dictation would take the focus from the window that the text is for.
 - Saved `ask` chats, including screenshots, are plain JSON files in `~/.local/share/uktr/ask/`.
   Set `ASK_HISTORY=0` to save nothing.
 - Text, documents, screenshots and audio can come from someone else, and the model can follow

@@ -115,7 +115,8 @@ if [ -n "$missing" ]; then
     else echo "  Missing packages (names differ per distribution):$missing"; fi
 fi
 if [ -w /dev/uinput ]; then ok "/dev/uinput (dictate types into the active window)"; else
-    warn "no write access to /dev/uinput: dictate leaves the text on the clipboard. To allow it:"
+    warn "no write access to /dev/uinput: dictate leaves the text on the clipboard. To allow it"
+    echo "    (this lets every program of yours type and click in any window; see README, Requirements):"
     echo "    sudo cp $REPO/udev/60-local-llm-hotkeys-uinput.rules /etc/udev/rules.d/"
     echo "    sudo udevadm control --reload && sudo udevadm trigger --sysname-match=uinput"
 fi
