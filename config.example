@@ -1,5 +1,6 @@
 # Copy to ~/.config/uktr/config. Environment variables with the same name override this file.
-# "#" starts a comment, also after a value.
+# "#" starts a comment, also after a value, so a value cannot contain " #" (set such a value
+# as an environment variable instead).
 
 # NPU via FastFlowLM (systemctl --user start flm):
 UKTR_URL=http://localhost:52625/v1
