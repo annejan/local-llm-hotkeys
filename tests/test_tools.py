@@ -107,6 +107,8 @@ class Stream(unittest.TestCase):
 class Desktop(unittest.TestCase):
     def test_plain(self):
         self.assertEqual(llm.plain("x\x1b[31my\x7f\r\nz\tö"), "x[31my\nz\tö")
+        # A bidi override turns "pay 10 EUR" into "pay 01 EUR" on screen; zero-width characters hide.
+        self.assertEqual(llm.plain("pay \u202e01\u202c EUR\u200b"), "pay 01 EUR")
 
     def test_notify_escapes_markup(self):
         calls = []

@@ -321,7 +321,10 @@ def window(first=None):
             self.document().setMarkdown(text, QTextDocument.MarkdownDialectGitHub | QTextDocument.MarkdownNoHTML)
 
         def open_link(self, url):
-            if url.scheme() in ("http", "https") and confirm(self, f"Open this link?\n\n{url.toString()}"):
+            # The encoded form, as browsers show it: a host with Cyrillic letters that looks
+            # like a known site shows as xn--…, not as the look-alike.
+            shown = url.toEncoded().data().decode("ascii", "replace")
+            if url.scheme() in ("http", "https") and confirm(self, f"Open this link?\n\n{shown}"):
                 QDesktopServices.openUrl(url)
 
         def add_image(self, data_url):

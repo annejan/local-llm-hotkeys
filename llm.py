@@ -74,14 +74,17 @@ class Error(Exception):
     """A problem to show to the user as it is, without a traceback."""
 
 
-CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+# C0 and C1 control characters except tab and newline, and the Unicode characters that change
+# the direction or the visibility of text (bidi overrides, zero-width characters).
+CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
 
 
 def plain(text):
     """Text without control characters; newlines and tabs stay. What a model or Whisper writes
     can come from a document or a web page of someone else. Escape sequences in it make a
-    terminal act (set the title, write the clipboard, hide a link), and an escape or a carriage
-    return in text that is pasted into a terminal can run a command."""
+    terminal act (set the title, write the clipboard, hide a link), an escape or a carriage
+    return in text that is pasted into a terminal can run a command, and a bidi override
+    shows text in another order than it is."""
     return CONTROL.sub("", text)
 
 
