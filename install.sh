@@ -14,6 +14,7 @@ TOOLS="uktr eli12 fixtext ask dictate"
 BIN=$HOME/.local/bin
 APPS=$HOME/.local/share/applications
 MENUS=$HOME/.local/share/kio/servicemenus
+ICONS=$HOME/.local/share/icons/hicolor/scalable/apps
 XKB=$HOME/.config/xkb
 CONF=$HOME/.config/uktr/config
 MODELS="translategemma:4b hy-mt2-flash:1.8b whisper-v3:turbo qwen3.5:9b"
@@ -46,6 +47,7 @@ uninstall() {
         [ -f "$APPS/$(basename "$f")" ] && rm "$APPS/$(basename "$f")" && ok "removed hotkey $(basename "$f")"
     done
     [ -f "$MENUS/uktr.desktop" ] && rm "$MENUS/uktr.desktop" && ok "removed the Dolphin menu"
+    [ -f "$ICONS/local-llm-hotkeys.svg" ] && rm "$ICONS/local-llm-hotkeys.svg" && ok "removed the icon"
     for b in kbuildsycoca6 kbuildsycoca5; do command -v $b >/dev/null && $b >/dev/null 2>&1 && break; done
     step "Kept"
     echo "  your config ($CONF) and saved chats (~/.local/share/uktr/ask/)."
@@ -141,7 +143,9 @@ ok "your language: $lang (set UKTR_LANGUAGE in the config to change it)"
 SYCOCA=$(command -v kbuildsycoca6 || command -v kbuildsycoca5)
 if [ -n "$SYCOCA" ]; then
     step "KDE hotkeys and Dolphin menu"
-    mkdir -p "$APPS" "$MENUS"
+    mkdir -p "$APPS" "$MENUS" "$ICONS"
+    # The Ai key icon of the chat window (a key cap, so it shows on light and dark panels)
+    cp kde/icons/local-llm-hotkeys.svg "$ICONS/" && touch "$(dirname "$(dirname "$ICONS")")" && ok "the Ai key icon"
     for f in kde/*.desktop; do
         cp "$f" "$APPS/" && ok "$(sed -n 's/^Name=//p' "$f")  [$(keys "$f")]"
     done

@@ -3,6 +3,6 @@ Type=Application
 Name=ask: chat with the local LLM
 Comment=Chat with the local LLM; follow-up questions keep the conversation
 Exec=ask --popup
-Icon=dialog-question
+Icon=local-llm-hotkeys
 Categories=Utility;
 X-KDE-Shortcuts=Meta+Shift+Q,Meta+Shift+F23,Meta+Shift+Touchpad Off
