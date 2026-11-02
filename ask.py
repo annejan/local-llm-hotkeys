@@ -266,7 +266,7 @@ def terminal(chat=None):
 
 def window(first=None):
     try:
-        from PySide6.QtCore import QObject, Qt, QTimer, Signal
+        from PySide6.QtCore import QByteArray, QObject, Qt, QTimer, Signal
         from PySide6.QtGui import QDesktopServices, QImage, QKeySequence, QShortcut, QTextDocument
         from PySide6.QtWidgets import (
             QApplication,
@@ -312,9 +312,10 @@ def window(first=None):
             self.images = {}
 
         def loadResource(self, kind, url):
+            # Always an empty value, never None: for None, Qt loads the file itself.
             if kind == QTextDocument.ImageResource:
-                return self.images.get(url.toString())
-            return super().loadResource(kind, url)
+                return self.images.get(url.toString(), QImage())
+            return QByteArray()
 
         def show_markdown(self, text):
             self.document().setMarkdown(text, QTextDocument.MarkdownDialectGitHub | QTextDocument.MarkdownNoHTML)
