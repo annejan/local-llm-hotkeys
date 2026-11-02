@@ -345,6 +345,10 @@ Log out and in again, so that KWin loads the new keyboard map. KDE then sees Met
 With an older keyboard map, KDE sees "Meta+Shift+Touchpad Off" instead; the `.desktop` files
 list both names, so the shortcuts work either way.
 
+Upstream: Qt 6.13 knows `XF86Assistant` (`Qt::Key_Assistant`). KWin and the KDE shortcut
+recorder still need a small change each before the key works without this override; see
+[KDE bug 502639](https://bugs.kde.org/show_bug.cgi?id=502639).
+
 Ctrl and Alt are free to add, so there are four combinations: Copilot (ask), Ctrl+Copilot
 (eli12), Alt+Copilot (translate) and Ctrl+Alt+Copilot (explain the active window). AltGr
 works as Alt here.
