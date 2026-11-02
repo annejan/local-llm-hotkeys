@@ -14,6 +14,7 @@ import ask
 import eli12
 import fixtext
 import llm
+import uktr
 
 
 class Config(unittest.TestCase):
@@ -91,6 +92,30 @@ class Stream(unittest.TestCase):
     def test_error_chunk(self):
         with self.assertRaises(llm.Error):
             self.stream(['data: {"error":{"message":"model not found"}}'])
+
+
+class Output(unittest.TestCase):
+    def test_writes_and_overwrites(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "doc.nl.md")
+            for text in ("a long first translation", "second"):
+                with uktr.open_output(path) as f:
+                    f.write(text)
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(f.read(), "second")
+
+    def test_refuses_links(self):
+        with tempfile.TemporaryDirectory() as d:
+            target = os.path.join(d, "bashrc")
+            with open(target, "w") as f:
+                f.write("keep")
+            os.symlink(target, os.path.join(d, "sym.nl.md"))
+            os.link(target, os.path.join(d, "hard.nl.md"))
+            for name in ("sym.nl.md", "hard.nl.md"):
+                with self.assertRaises(llm.Error):
+                    uktr.open_output(os.path.join(d, name))
+            with open(target) as f:
+                self.assertEqual(f.read(), "keep")
 
 
 class Cancel(unittest.TestCase):

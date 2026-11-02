@@ -15,7 +15,9 @@ Backend is any OpenAI-compatible server, set in ~/.config/uktr/config or env:
   UKTR_LISTEN_MODEL  translation model for `listen` (default UKTR_MODEL)
   UKTR_LANG   spoken language for `listen`, default uk ("" = Whisper guesses)
 """
+import errno
 import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -63,6 +65,23 @@ def translate_popup(text, source):
         llm.popup(f"uktr → {TO}", out.read().strip())
 
 
+def open_output(path):
+    """Open the output file to write, also when it exists. A link there is refused: a downloaded
+    folder can hold FILE.nl.md as a link to ~/.bashrc, and the translation would replace that."""
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o666)
+    except OSError as e:
+        if e.errno == errno.ELOOP:
+            raise llm.Error(f"{path} is a link; not written") from None
+        raise llm.Error(str(e)) from None
+    st = os.fstat(fd)
+    if not stat.S_ISREG(st.st_mode) or st.st_nlink > 1:  # a hard link is another file's content too
+        os.close(fd)
+        raise llm.Error(f"{path} is not a plain file, or has more names (a hard link); not written")
+    os.ftruncate(fd, 0)
+    return os.fdopen(fd, "w", encoding="utf-8")
+
+
 def translate_file(src, dst=None, notify=False):
     dst = dst or f"{os.path.splitext(src)[0]}.{SUFFIX}.md"
     text = llm.extract(src)
@@ -70,7 +89,7 @@ def translate_file(src, dst=None, notify=False):
         llm.notify(f"translating {os.path.basename(src)}…", "uktr")
     else:
         print(f"{src} → {dst} ({len(text)} chars, model {MODEL})", file=sys.stderr)
-    with open(dst, "w", encoding="utf-8") as out:
+    with open_output(dst) as out:
         translate_long(text, out, progress=not notify)
     if notify:
         llm.notify(f"done: {dst}", "uktr", 10000)
