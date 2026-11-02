@@ -635,7 +635,8 @@ def window(first=None, chat=None, title=None):
             self.cancel = llm.Cancel()
             self.button.setText("Stop")
             self.status.setText("thinking…")
-            threading.Thread(target=self.work, args=(question,), daemon=True).start()
+            self.worker = threading.Thread(target=self.work, args=(question,), daemon=True)
+            self.worker.start()
             self.render(follow=True)
 
         def work(self, question):
@@ -692,6 +693,16 @@ def window(first=None, chat=None, title=None):
             """Stop now: also while the model is still loading or before the first word."""
             self.stop.set()
             self.cancel.cancel()
+
+        def closeEvent(self, event):
+            """Closing while an answer comes in: stop it first, as Stop does, so that the server
+            can end it (see llm._Stream); the program waits for that at exit, after the window
+            is gone. Killing the connection with the window made FastFlowLM keep it counted as
+            open."""
+            if self.busy:
+                self.stop_answer()
+                self.worker.join(2)  # the answer stops at once; this only lets it save the chat
+            super().closeEvent(event)
 
         def escape(self):
             if self.busy:

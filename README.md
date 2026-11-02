@@ -436,6 +436,13 @@ openSUSE Tumbleweed, kernel 7.2+. Without such an NPU, use ollama (see [Models](
 
    `-a 1` loads Whisper next to the other model.
 
+FastFlowLM (up to at least 1.0.11) counts a stopped answer as a connection that stays open,
+and after 10 of those it refuses every request until it restarts
+([its issue #680](https://github.com/ROCm/FastFlowLM/issues/680)). These tools stop an answer
+in a way that the server can finish, so Stop, Esc and closing the window do not cause that. A
+client that cuts a connection still can; then you get "the model server closed the connection
+without an answer", and the fix is `systemctl --user restart flm`.
+
 ### Models
 
 - `translategemma:4b`: a translation model. Better than Hy-MT2 with slang and abbreviations,

@@ -3,16 +3,21 @@
 Config: ~/.config/uktr/config (KEY=value lines, # comments), overridden by environment
 variables that start with UKTR_, ELI12_, FIX_, ASK_ or DICTATE_.
 """
+import atexit
 import contextlib
 import html
 import http.client
 import json
 import os
+import queue
 import re
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -90,10 +95,30 @@ def plain(text):
 
 # --- the LLM server (OpenAI-compatible) ---
 
+def refused(url):
+    """What to say when the server at url takes a connection and closes it without an answer."""
+    return (f"the model server ({url}) closed the connection without an answer. FastFlowLM (up to at "
+            "least 1.0.11) does that to every request after 10 answers were stopped while it wrote "
+            "them (https://github.com/ROCm/FastFlowLM/issues/680). Restart it: "
+            "systemctl --user restart flm")
+
+
+def _open(req, timeout):
+    """urlopen, with refused() for a server that hangs up instead of answering."""
+    try:
+        return urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.URLError as e:
+        if isinstance(e.reason, (BrokenPipeError, ConnectionResetError)):
+            raise Error(refused(req.full_url)) from None
+        raise
+    except (BrokenPipeError, ConnectionResetError, http.client.RemoteDisconnected):
+        raise Error(refused(req.full_url)) from None
+
+
 def _request(body, timeout):
     req = urllib.request.Request(URL + "/chat/completions", json.dumps(body).encode(),
                                  {"Content-Type": "application/json"})
-    return urllib.request.urlopen(req, timeout=timeout)
+    return _open(req, timeout)
 
 
 def _body(messages, model, temperature, stream):
@@ -118,42 +143,109 @@ def complete(system, text, model, temperature=0.2):
                 model, temperature)
 
 
+DRAIN_AT_EXIT = 30  # seconds a program waits at exit for stopped answers to end (see _Stream)
+_END = object()
+_streams = set()  # streams whose reader still runs
+
+
+class _Stream:
+    """One streaming request, read by a thread of its own; the lines go through a queue.
+
+    Why a thread: the reader must be able to stop at once (Stop, Esc, Ctrl+C), also before the
+    first word, while the connection must not be cut. FastFlowLM (up to at least 1.0.11) never
+    frees a connection whose client leaves while it writes: after 10 stopped answers it refuses
+    every request until it restarts (https://github.com/ROCm/FastFlowLM/issues/680). So leave()
+    only closes our sending side and wakes the reader of the queue; the server sees that we are
+    gone, cancels the answer and writes its end, and this thread reads that end before it closes
+    the connection. That can take as long as a model load. A Ctrl+C reaches only the main thread,
+    never this one, so it cannot break off a read halfway."""
+
+    def __init__(self, url, body, timeout):
+        self.url, self.lines, self.stop, self.sock = url, queue.Queue(), threading.Event(), None
+        self.thread = threading.Thread(target=self.read, args=(body, timeout), daemon=True)
+        _streams.add(self)
+        self.thread.start()
+
+    def read(self, body, timeout):
+        url = urllib.parse.urlsplit(self.url)
+        kind = http.client.HTTPSConnection if url.scheme == "https" else http.client.HTTPConnection
+        conn = kind(url.hostname, url.port, timeout=timeout)
+        try:
+            conn.connect()
+            self.sock = conn.sock
+            if self.stop.is_set():
+                return  # nothing was sent: the server just sees a connection close
+            try:
+                conn.request("POST", url.path, json.dumps(body).encode(),
+                             {"Content-Type": "application/json"})
+                r = conn.getresponse()
+            except (BrokenPipeError, ConnectionResetError, http.client.RemoteDisconnected):
+                if not self.stop.is_set():
+                    self.lines.put(Error(refused(self.url)))
+                return
+            if r.status != 200:
+                self.lines.put(Error(f"server error {r.status}: {r.read().decode('utf-8', 'replace')[:300]}"))
+                return
+            for line in r:  # after leave(), this reads on to the end, so the server can finish
+                if not self.stop.is_set():
+                    self.lines.put(line)
+        except (OSError, http.client.HTTPException) as e:
+            if not self.stop.is_set():
+                self.lines.put(e)
+        finally:
+            conn.close()
+            self.lines.put(_END)
+            _streams.discard(self)
+
+    def leave(self):
+        """The answer is not wanted any more: let the server end it, and wake the reader."""
+        if self.stop.is_set():
+            return
+        self.stop.set()
+        if self.sock:
+            with contextlib.suppress(OSError):
+                self.sock.shutdown(socket.SHUT_WR)
+        self.lines.put(_END)
+
+
+@atexit.register
+def _drain_at_exit():
+    """At exit, give stopped answers a moment to end, so that the server can finish them."""
+    deadline = time.monotonic() + DRAIN_AT_EXIT
+    for stream in list(_streams):
+        stream.thread.join(max(0, deadline - time.monotonic()))
+
+
 class Cancel:
-    """Stops a chat_stream() from another thread at once, also while it still waits for the
-    first word (the model may be loading). Pass it to chat_stream(), then call cancel()."""
+    """Stops a chat_stream() from another thread at once, also while it still waits for the first
+    word (the model may be loading). Pass it to chat_stream(), then call cancel()."""
 
     def __init__(self):
-        self.cancelled, self.sock = False, None
+        self.cancelled, self.stream = False, None
 
     def cancel(self):
         self.cancelled = True
-        if self.sock:
-            with contextlib.suppress(OSError):
-                self.sock.shutdown(socket.SHUT_RDWR)  # wakes up the thread that reads
+        if self.stream:
+            self.stream.leave()
 
 
 def _stream_lines(body, timeout, cancel):
-    """The lines of a streaming reply. With http.client instead of urllib, so the socket is
-    known before the server answers, and cancel() can shut it down."""
-    url = urllib.parse.urlsplit(URL + "/chat/completions")
-    kind = http.client.HTTPSConnection if url.scheme == "https" else http.client.HTTPConnection
-    conn = kind(url.hostname, url.port, timeout=timeout)
+    """The lines of a streaming reply, from a _Stream. However the reader stops before the end
+    (cancel(), Ctrl+C, an error, or right after [DONE]), the stream is left so that the server
+    can finish the answer: see _Stream."""
+    stream = _Stream(URL + "/chat/completions", body, timeout)
+    cancel.stream = stream
+    if cancel.cancelled:
+        stream.leave()
     try:
-        conn.connect()
-        cancel.sock = conn.sock
-        if cancel.cancelled:
-            return
-        conn.request("POST", url.path, json.dumps(body).encode(),
-                     {"Content-Type": "application/json"})
-        r = conn.getresponse()
-        if r.status != 200:
-            raise Error(f"server error {r.status}: {r.read(300).decode('utf-8', 'replace')}")
-        yield from r
-    except (OSError, http.client.HTTPException):
-        if not cancel.cancelled:
-            raise
+        while (item := stream.lines.get()) is not _END:
+            if isinstance(item, BaseException):
+                raise item
+            yield item
     finally:
-        conn.close()
+        stream.leave()
+        if cancel.stream is stream:
+            cancel.stream = None
 
 
 def chat_stream(messages, model, temperature=0.5, timeout=600, cancel=None):
@@ -223,7 +315,7 @@ def transcribe(pcm, lang=""):
              "Content-Type: audio/wav\r\n\r\n").encode() + wav_bytes(pcm) + f"\r\n--{boundary}--\r\n".encode()
     req = urllib.request.Request(conf.get("UKTR_ASR_URL", URL).rstrip("/") + "/audio/transcriptions",
                                  body, {"Content-Type": f"multipart/form-data; boundary={boundary}"})
-    with urllib.request.urlopen(req, timeout=120) as r:
+    with _open(req, timeout=120) as r:
         text = plain(json.load(r).get("text", "")).strip()
     if not any(c.isalnum() for c in text) or text.lower().strip(" .!…") in HALLUCINATIONS:
         return ""  # "***", "..." or a known hallucination: nothing was said

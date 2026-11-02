@@ -3,6 +3,8 @@ import builtins
 import importlib.util
 import io
 import os
+import re
+import signal
 import socket
 import stat
 import subprocess
@@ -11,6 +13,7 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.request
 from typing import ClassVar
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -539,32 +542,177 @@ class DictateRunning(unittest.TestCase):
             dictate.PIDFILE = real
 
 
+class FakeFLM:
+    """A streaming server that behaves like FastFlowLM when a client leaves: it ends the answer
+    with more than one write (the last piece, then the end), and records whether those writes
+    succeeded. When one fails, FastFlowLM never frees the connection (issue #680); the first write
+    to a closed connection still succeeds, the next one fails, so two writes tell them apart.
+    mode: "stream" writes pieces until the client is gone; "prefill" writes nothing until the
+    client is gone, like a model that is still loading; "silent" never answers; "hang_up" takes
+    the connection and closes it, like FastFlowLM at its limit."""
+
+    def __init__(self, mode="stream"):
+        self.server = socket.socket()
+        self.server.bind(("127.0.0.1", 0))
+        self.server.listen(4)
+        self.mode, self.saw_eof, self.end_written = mode, None, None
+        self.thread = threading.Thread(target=self.serve, daemon=True)
+        self.thread.start()
+        self.url = f"http://127.0.0.1:{self.server.getsockname()[1]}/v1"
+
+    def serve(self):
+        conn, _ = self.server.accept()
+        with conn:
+            if self.mode == "hang_up":
+                return
+            data = b""
+            while b"\r\n\r\n" not in data:
+                data += conn.recv(65536)
+            head, body = data.split(b"\r\n\r\n", 1)
+            length = int(re.search(rb"Content-Length: (\d+)", head).group(1))
+            while len(body) < length:
+                body += conn.recv(65536)
+            if self.mode == "silent":
+                time.sleep(3)
+                return
+            if self.mode == "prefill":
+                conn.settimeout(5)
+                self.saw_eof = conn.recv(1) == b""  # nothing until the client is gone
+                conn.settimeout(None)
+            conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n")
+            if self.mode == "stream":
+                conn.setblocking(False)
+                for i in range(200):
+                    piece = f'data: {{"choices":[{{"delta":{{"content":"w{i} "}}}}]}}\n\n'.encode()
+                    conn.sendall(f"{len(piece):x}\r\n".encode() + piece + b"\r\n")
+                    time.sleep(0.02)
+                    try:
+                        if conn.recv(1) == b"":  # the client closed its sending side: it is gone
+                            self.saw_eof = True
+                            break
+                    except BlockingIOError:
+                        continue
+                    except OSError:
+                        self.saw_eof = False  # a reset, not a clean close
+                        break
+                conn.setblocking(True)
+            end = b'data: {"choices":[{"delta":{},"finish_reason":"cancel"}]}\n\ndata: [DONE]\n\n'
+            try:
+                for chunk in (b'data: {"choices":[{"delta":{"content":"last"}}]}\n\n', end):
+                    conn.sendall(f"{len(chunk):x}\r\n".encode() + chunk + b"\r\n")
+                    time.sleep(0.1)
+                conn.sendall(b"0\r\n\r\n")
+                self.end_written = True
+            except OSError:
+                self.end_written = False
+
+    def close(self):
+        self.thread.join(5)
+        self.server.close()
+
+
 class Cancel(unittest.TestCase):
+    def setUp(self):
+        self.real = llm.URL
+
+    def tearDown(self):
+        llm.URL = self.real
+
     def test_cancel_while_waiting_for_the_first_word(self):
-        """A server that takes the request and does not answer yet (a model that is loading):
-        cancel() must stop the stream at once, not after the timeout."""
-        server = socket.socket()
-        server.bind(("127.0.0.1", 0))
-        server.listen(1)
-        conns = []
-        threading.Thread(target=lambda: conns.append(server.accept()), daemon=True).start()
-        real, llm.URL = llm.URL, f"http://127.0.0.1:{server.getsockname()[1]}/v1"
+        """A server that takes the request and does not answer (a model that is loading): the
+        stream stops at once on cancel(), not after the timeout."""
+        server = FakeFLM("silent")
+        llm.URL = server.url
+        cancel, out, stopped = llm.Cancel(), [], []
+
+        def read():
+            out.extend(llm.chat_stream([], "m", cancel=cancel))
+            stopped.append(time.monotonic())
+        t = threading.Thread(target=read)
+        t.start()
+        time.sleep(0.3)
+        start = time.monotonic()
+        cancel.cancel()
+        t.join(5)
+        self.assertFalse(t.is_alive(), "the stream did not stop")
+        self.assertLess(stopped[0] - start, 0.5)
+        self.assertEqual(out, [])
+        server.close()
+
+    def test_stop_lets_the_server_end_the_answer(self):
+        """Stop after the first words: at once for the reader, and the server can still write
+        the end of its answer."""
+        server = FakeFLM()
+        llm.URL = server.url
         cancel, out = llm.Cancel(), []
-        try:
-            t = threading.Thread(target=lambda: out.extend(llm.chat_stream([], "m", cancel=cancel)))
-            start = time.monotonic()
-            t.start()
-            time.sleep(0.3)
-            cancel.cancel()
-            t.join(5)
-            self.assertFalse(t.is_alive(), "the stream did not stop")
-            self.assertLess(time.monotonic() - start, 2)
-            self.assertEqual(out, [])
-        finally:
-            llm.URL = real
+        for piece in llm.chat_stream([], "m", cancel=cancel):
+            out.append(piece)
+            if len(out) == 3:
+                start = time.monotonic()
+                cancel.cancel()
+        self.assertLess(time.monotonic() - start, 0.5)
+        server.close()
+        self.assertEqual(len(out), 3)
+        self.assertTrue(server.saw_eof, "the server did not see a clean close")
+        self.assertTrue(server.end_written, "the server could not write the end of the answer")
+
+    def test_stop_before_the_first_word(self):
+        """Stop while the server has not answered yet: at once for the reader, and the server,
+        which answers only after it sees the client go, can still write its whole end."""
+        server = FakeFLM("prefill")
+        llm.URL = server.url
+        cancel = llm.Cancel()
+        threading.Timer(0.3, cancel.cancel).start()
+        start = time.monotonic()
+        self.assertEqual(list(llm.chat_stream([], "m", cancel=cancel)), [])
+        self.assertLess(time.monotonic() - start, 0.8)
+        server.close()
+        self.assertTrue(server.saw_eof)
+        self.assertTrue(server.end_written, "the server could not write the end of the answer")
+
+    def test_ctrl_c_before_the_first_word(self):
+        """Ctrl+C in the terminal while the model is still loading: KeyboardInterrupt reaches
+        the main thread, not the read, and the server can still finish."""
+        server = FakeFLM("prefill")
+        llm.URL = server.url
+        stream = llm.chat_stream([], "m")
+        # A real SIGINT, as Ctrl+C sends: it interrupts the wait for the first line at once
+        # (_thread.interrupt_main() would only raise once the main thread runs Python again).
+        threading.Timer(0.3, os.kill, (os.getpid(), signal.SIGINT)).start()
+        start = time.monotonic()
+        with self.assertRaises(KeyboardInterrupt):
+            next(stream)
+        self.assertLess(time.monotonic() - start, 1)
+        stream.close()
+        server.close()
+        self.assertTrue(server.saw_eof)
+        self.assertTrue(server.end_written, "the server could not write the end of the answer")
+
+    def test_reader_that_leaves_early(self):
+        """Ctrl+C after the first words, or an error: the reader leaves without cancel(). The
+        stream ends the same way, so the server can still finish."""
+        server = FakeFLM()
+        llm.URL = server.url
+        stream = llm.chat_stream([], "m")
+        self.assertEqual(next(stream), "w0 ")
+        stream.close()
+        server.close()
+        self.assertTrue(server.saw_eof)
+        self.assertTrue(server.end_written)
+
+    def test_server_that_hangs_up(self):
+        """FastFlowLM at its connection limit takes the connection and closes it: say what that
+        is and what to do, naming the server that was asked, not BrokenPipeError."""
+        calls = (lambda url: list(llm.chat_stream([], "m")), lambda url: llm.chat([], "m"),
+                 lambda url: llm._open(urllib.request.Request(url + "/audio/transcriptions", b"x"), 5))
+        for call in calls:
+            server = FakeFLM("hang_up")
+            llm.URL = server.url
+            with self.assertRaises(llm.Error) as e:
+                call(server.url)
+            self.assertIn("issues/680", str(e.exception))
+            self.assertIn(server.url, str(e.exception))
             server.close()
-            for conn, _ in conns:
-                conn.close()
 
 
 class Fixtext(unittest.TestCase):
