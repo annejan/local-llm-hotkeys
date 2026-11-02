@@ -431,7 +431,9 @@ openSUSE Tumbleweed, kernel 7.2+. Without such an NPU, use ollama (see [Models](
 
 - `translategemma:4b`: a translation model. Better than Hy-MT2 with slang and abbreviations,
   but about 3.5x slower (6.3 s against 1.8 s for two paragraphs). The default for `clip`,
-  `shot` and files.
+  `shot` and files. uktr gives it the instruction and the language code in the user message,
+  at temperature 0: with a system prompt (up to v0.2.2) it translated a Ukrainian news text
+  into Portuguese, and a Ukrainian sentence into Russian, when Dutch was asked.
 - `hy-mt2-flash:1.8b` (Hunyuan Hy-MT2): a model only for translation. It is fast on the NPU
   (about 50 tokens/s output) and gives good results; the example config uses it for
   `listen`, where speed matters. uktr sends it the user-only prompt it was trained on when
@@ -444,11 +446,12 @@ openSUSE Tumbleweed, kernel 7.2+. Without such an NPU, use ollama (see [Models](
   make some mistakes) and take about twice as long, so it only pays off if you often switch.
 - You can pick a model per use. In a test with instructions hidden in texts
   (`tests/injection.py`), qwen3.5:9b was the only translator that kept every line;
-  translategemma once wrote what a hidden line asked for, and Hy-MT2 dropped a line. A
+  translategemma wrote what a hidden line asked for in one text and dropped the line in
+  another, and Hy-MT2 dropped a line. A
   document can wait, so `UKTR_FILE_MODEL=qwen3.5:9b` makes sense there; for
   `dictate --translate`, where you wait for the text to appear, `DICTATE_MODEL=hy-mt2-flash:1.8b`.
 - With ollama, any chat model works for translation too (for example `gemma4:12b`); it gets
-  a system prompt that tells it to output only the translation. Set `ELI12_MODEL`,
+  the same instruction to output only the translation. Set `ELI12_MODEL`,
   `FIX_MODEL` and `ASK_MODEL` to a chat model that you have.
 
 ## Configuration

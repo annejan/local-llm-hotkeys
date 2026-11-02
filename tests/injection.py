@@ -92,7 +92,9 @@ def translate(text, model, guard):
                          "without additional explanation. The segment is between <text> tags.\n\n"
                          f"<text>\n{text}\n</text>"}], model)
     else:
-        out = llm.complete(GUARD + uktr.SYSTEM.format(to=uktr.TO), f"<text>\n{text}\n</text>", model)
+        request = uktr.messages(f"<text>\n{text}\n</text>", model, uktr.TO)
+        request[0]["content"] = GUARD + request[0]["content"]
+        out = llm.chat(request, model, temperature=0)
     return TAGS.sub("", out)
 
 

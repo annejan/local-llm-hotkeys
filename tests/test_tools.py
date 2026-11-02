@@ -174,6 +174,32 @@ class Audio(unittest.TestCase):
         self.assertGreater(llm.rms(loud + b"\x01"), 0)
 
 
+class TranslatePrompt(unittest.TestCase):
+    """The instruction goes in the user message with the language code (translategemma ignored
+    a system prompt for some texts and translated into Portuguese or Russian), at temperature 0."""
+
+    def test_messages(self):
+        request = uktr.messages("Привіт", "translategemma:4b", "Dutch")
+        self.assertEqual([m["role"] for m in request], ["user"])
+        self.assertTrue(request[0]["content"].startswith("Translate the following text into Dutch (nl)."))
+        self.assertTrue(request[0]["content"].endswith("\n\n\nПривіт"))
+        self.assertIn("into German (de)", uktr.messages("x", "qwen3.5:9b", "de")[0]["content"])
+
+    def test_hy_mt_keeps_its_prompt(self):
+        request = uktr.messages("Привіт", "hy-mt2-flash:1.8b", "nl")
+        self.assertEqual(request, [{"role": "user", "content": "Translate the following segment into Dutch, "
+                                    "without additional explanation.\n\nПривіт"}])
+
+    def test_temperature_zero(self):
+        sent, real = [], llm.chat
+        llm.chat = lambda messages, model, temperature=0.2, timeout=600: sent.append(temperature) or "ok"
+        try:
+            uktr.translate("x", "translategemma:4b", "Dutch")
+        finally:
+            llm.chat = real
+        self.assertEqual(sent, [0])
+
+
 class ModelPerUse(unittest.TestCase):
     def test_file_model(self):
         used = []
