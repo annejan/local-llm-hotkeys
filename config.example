@@ -7,6 +7,9 @@ UKTR_URL=http://localhost:52625/v1
 UKTR_MODEL=translategemma:4b
 # uktr listen: faster model so subtitles keep up
 UKTR_LISTEN_MODEL=hy-mt2-flash:1.8b
+# uktr FILE and "Translate (uktr)" in Dolphin: a document can wait for a slower model that
+# keeps every line (qwen3.5:9b: about 1.5 times as slow as translategemma)
+#UKTR_FILE_MODEL=qwen3.5:9b
 
 # GPU via ollama (then also set ELI12_MODEL, FIX_MODEL and ASK_MODEL to a chat model you have):
 #UKTR_URL=http://localhost:11434/v1
@@ -46,3 +49,4 @@ UKTR_LISTEN_MODEL=hy-mt2-flash:1.8b
 #DICTATE_SILENCE=150   # microphone level that counts as quiet
 #DICTATE_PAUSE=2   # seconds of quiet after speech that end a dictation
 #DICTATE_TO=English   # language that dictate --translate types
+#DICTATE_MODEL=hy-mt2-flash:1.8b   # translation model for dictate --translate; fast types sooner

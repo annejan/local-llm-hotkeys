@@ -19,6 +19,8 @@ Uses the same server and config file as uktr (~/.config/uktr/config, UKTR_ASR_UR
   DICTATE_PAUSE     seconds of quiet after speech that end the dictation, default 2
   DICTATE_MAX       longest dictation in seconds, default 120
   DICTATE_TO        language for --translate, default English
+  DICTATE_MODEL     translation model for --translate, default UKTR_MODEL; a fast one
+                    (hy-mt2-flash:1.8b) types sooner
 """
 import contextlib
 import os
@@ -36,6 +38,7 @@ SILENCE = float(llm.conf.get("DICTATE_SILENCE", "150"))
 PAUSE = float(llm.conf.get("DICTATE_PAUSE", "2"))
 MAX = float(llm.conf.get("DICTATE_MAX", "120"))
 TO = llm.parse_language(llm.conf.get("DICTATE_TO", "English"))[1]
+MODEL = llm.conf.get("DICTATE_MODEL") or uktr.MODEL
 WAIT = 8  # seconds to wait for the first word before giving up
 BLOCK = llm.RATE // 4 * 2  # 0.25 s of 16 kHz s16 audio, in bytes
 # Only in your own runtime folder: in /tmp another user can make the file first.
@@ -135,7 +138,7 @@ def text_of(audio, translate):
     """What was said, translated to TO with translate=True ("" if nothing was said). It is one
     line: a line break pasted into a terminal is Enter, and runs what came before it."""
     text = llm.transcribe(audio, LANG) if audio else ""
-    text = uktr.translate(text, to=TO) if text and translate else text
+    text = uktr.translate(text, MODEL, to=TO) if text and translate else text
     return " ".join(text.split())
 
 

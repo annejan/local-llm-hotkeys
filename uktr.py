@@ -11,6 +11,8 @@
 Backend is any OpenAI-compatible server, set in ~/.config/uktr/config or env:
   UKTR_URL    default http://localhost:52625/v1 (FastFlowLM on the NPU; ollama: :11434/v1)
   UKTR_MODEL  default translategemma:4b
+  UKTR_FILE_MODEL  translation model for FILE and --notify (default UKTR_MODEL): a document
+              can wait for a slower, more careful model
   UKTR_TO     target language, default your language (UKTR_LANGUAGE, else the desktop's)
   UKTR_LISTEN_MODEL  translation model for `listen` (default UKTR_MODEL)
   UKTR_LANG   spoken language for `listen`, default uk ("" = Whisper guesses)
@@ -27,6 +29,7 @@ import llm
 
 conf = llm.conf
 MODEL = conf.get("UKTR_MODEL", "translategemma:4b")
+FILE_MODEL = conf.get("UKTR_FILE_MODEL") or MODEL
 SUFFIX, TO = llm.parse_language(conf["UKTR_TO"]) if conf.get("UKTR_TO") else llm.language()
 # SUFFIX names the output file: FILE.nl.md for Dutch, FILE.en.md for English, ...
 
@@ -44,12 +47,12 @@ def translate(text, model=None, to=None):
     return llm.complete(SYSTEM.format(to=to), text, model)
 
 
-def translate_long(text, out, progress=False):
+def translate_long(text, out, progress=False, model=None):
     parts = list(llm.chunks(text))
     for i, part in enumerate(parts, 1):
         if progress:
             print(f"\r[{i}/{len(parts)}]", end="", file=sys.stderr, flush=True)
-        out.write(translate(part) + "\n\n")
+        out.write(translate(part, model) + "\n\n")
         out.flush()
     if progress:
         print(file=sys.stderr)
@@ -89,9 +92,9 @@ def translate_file(src, dst=None, notify=False):
         llm.notify(f"translating {os.path.basename(src)}…", "uktr")
     else:
         # plain(): a file name from someone else's archive can hold escape codes
-        print(llm.plain(f"{src} → {dst} ({len(text)} chars, model {MODEL})"), file=sys.stderr)
+        print(llm.plain(f"{src} → {dst} ({len(text)} chars, model {FILE_MODEL})"), file=sys.stderr)
     with open_output(dst) as out:
-        translate_long(text, out, progress=not notify)
+        translate_long(text, out, progress=not notify, model=FILE_MODEL)
     if notify:
         llm.notify(f"done: {dst}", "uktr", 10000)
 

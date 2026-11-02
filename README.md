@@ -442,6 +442,11 @@ openSUSE Tumbleweed, kernel 7.2+. Without such an NPU, use ollama (see [Models](
   To avoid that, set `UKTR_MODEL=qwen3.5:9b`: one model for everything. Its translations are
   not better than translategemma's (we compared Ukrainian, German and Russian to Dutch: both
   make some mistakes) and take about twice as long, so it only pays off if you often switch.
+- You can pick a model per use. In a test with instructions hidden in texts
+  (`tests/injection.py`), qwen3.5:9b was the only translator that kept every line;
+  translategemma once wrote what a hidden line asked for, and Hy-MT2 dropped a line. A
+  document can wait, so `UKTR_FILE_MODEL=qwen3.5:9b` makes sense there; for
+  `dictate --translate`, where you wait for the text to appear, `DICTATE_MODEL=hy-mt2-flash:1.8b`.
 - With ollama, any chat model works for translation too (for example `gemma4:12b`); it gets
   a system prompt that tells it to output only the translation. Set `ELI12_MODEL`,
   `FIX_MODEL` and `ASK_MODEL` to a chat model that you have.
@@ -456,6 +461,7 @@ with the same name override the file. See `config.example`.
 | `UKTR_URL` | `http://localhost:52625/v1` | OpenAI-compatible API base URL (all tools) |
 | `UKTR_MODEL` | `translategemma:4b` | translation model |
 | `UKTR_LISTEN_MODEL` | `UKTR_MODEL` | translation model for `listen` |
+| `UKTR_FILE_MODEL` | `UKTR_MODEL` | translation model for documents (`uktr FILE`, the Dolphin menu) |
 | `UKTR_LANGUAGE` | the desktop language | your language: a code or name (`nl`, `Dutch`) |
 | `UKTR_TO` | `UKTR_LANGUAGE` | target language for uktr |
 | `UKTR_OCR` | `ukr+eng` | tesseract languages for `shot` |
@@ -476,6 +482,7 @@ with the same name override the file. See `config.example`.
 | `DICTATE_PAUSE` | `2` | seconds of quiet after speech that end a dictation |
 | `DICTATE_MAX` | `120` | longest dictation, in seconds |
 | `DICTATE_TO` | `English` | language that `dictate --translate` types |
+| `DICTATE_MODEL` | `UKTR_MODEL` | translation model for `dictate --translate` |
 | `ASK_SCREEN_PROMPT` | (English, answer in your language) | first question for `ask --screen`; `{language}` = your language |
 
 Example, one-off: translate to German, and subtitles for Russian audio:
