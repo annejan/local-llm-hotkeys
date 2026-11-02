@@ -37,7 +37,10 @@ MAX = float(llm.conf.get("DICTATE_MAX", "120"))
 TO = llm.parse_language(llm.conf.get("DICTATE_TO", "English"))[1]
 WAIT = 8  # seconds to wait for the first word before giving up
 BLOCK = llm.RATE // 4 * 2  # 0.25 s of 16 kHz s16 audio, in bytes
-PIDFILE = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "dictate.pid")
+# Only in your own runtime folder: in /tmp another user can make the file first.
+RUNTIME = os.environ.get("XDG_RUNTIME_DIR")
+PIDFILE = os.path.join(RUNTIME, "dictate.pid") if RUNTIME else None
+ME = os.path.realpath(__file__)
 
 
 class Keyboard:
@@ -74,13 +77,21 @@ class Keyboard:
 
 
 def running():
-    """The pid of a dictation that is listening now, or None."""
+    """The pid of a dictation that is listening now, or None. The process must run this
+    script: the pid in the file can be old and belong to another program now, and SIGUSR1
+    stops a program that does not handle it."""
+    if not PIDFILE:
+        return None
     try:
-        pid = int(open(PIDFILE).read())
+        with open(PIDFILE) as f:
+            pid = int(f.read())
         with open(f"/proc/{pid}/cmdline", "rb") as f:
-            return pid if b"dictate" in f.read() else None
+            args = f.read().decode("utf-8", "replace").split("\0")
     except (OSError, ValueError):
         return None
+    # python3 /path/dictate (a hotkey) or /path/dictate: the script is the 1st or 2nd argument.
+    cwd = f"/proc/{pid}/cwd"
+    return pid if any(os.path.realpath(os.path.join(cwd, a)) == ME for a in args[:2] if a) else None
 
 
 def record(log=print):
@@ -135,6 +146,9 @@ def main(argv):
     if argv:
         sys.exit(__doc__)
 
+    if not PIDFILE:
+        with llm.errors("dictate", gui=True):
+            raise llm.Error("XDG_RUNTIME_DIR is not set (is this a desktop session?)")
     pid = running()
     if pid:  # the hotkey again: stop that dictation, it types the text
         return os.kill(pid, signal.SIGUSR1)

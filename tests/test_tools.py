@@ -3,6 +3,7 @@ import io
 import os
 import socket
 import stat
+import subprocess
 import sys
 import tempfile
 import threading
@@ -149,6 +150,47 @@ class Dictate(unittest.TestCase):
             self.assertEqual(dictate.text_of(b"audio", False), "ls rm -rf x now")
         finally:
             llm.transcribe = real
+
+
+class DictateRunning(unittest.TestCase):
+    """The hotkey sends SIGUSR1 only to a process that runs dictate, not to any pid in the file."""
+
+    def check(self, args):
+        with tempfile.TemporaryDirectory() as d:
+            script = os.path.join(d, "dictate.py")
+            with open(script, "w") as f:
+                f.write("import time\ntime.sleep(10)\n")
+            real = dictate.PIDFILE, dictate.ME
+            dictate.PIDFILE, dictate.ME = os.path.join(d, "dictate.pid"), script
+            proc = subprocess.Popen([sys.executable, *args(script)], cwd=d)
+            try:
+                with open(dictate.PIDFILE, "w") as f:
+                    f.write(str(proc.pid))
+                for _ in range(50):  # until exec() has set the command line
+                    with open(f"/proc/{proc.pid}/cmdline", "rb") as f:
+                        if f.read().count(b"\0") >= len(args(script)) + 1:
+                            break
+                    time.sleep(0.02)
+                return dictate.running() == proc.pid
+            finally:
+                proc.kill()
+                proc.wait()
+                dictate.PIDFILE, dictate.ME = real
+
+    def test_this_script(self):
+        self.assertTrue(self.check(lambda script: [script]))
+        self.assertTrue(self.check(lambda script: ["dictate.py"]))  # relative to its folder
+
+    def test_another_program(self):
+        # The old check: "dictate" anywhere in the command line, such as vim dictate.py.
+        self.assertFalse(self.check(lambda script: ["-c", "import time; time.sleep(10)", script]))
+
+    def test_no_pid_file(self):
+        real, dictate.PIDFILE = dictate.PIDFILE, None
+        try:
+            self.assertIsNone(dictate.running())
+        finally:
+            dictate.PIDFILE = real
 
 
 class Cancel(unittest.TestCase):
