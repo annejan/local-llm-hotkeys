@@ -14,7 +14,7 @@ GPU stays free.
 | Press | You get |
 |---|---|
 | **Copilot** | a chat window. Ask anything, then ask follow-up questions. |
-| **Alt+Copilot** | the copied text, translated to your language. |
+| **Alt+Copilot** | the copied text, translated to your language. Then ask about it. |
 | **Ctrl+Copilot** | the copied text explained in a few plain sentences, in your language, with a to-do list if it asks you to do something. Then ask about it. |
 | **Ctrl+Alt+Copilot** | the window in front of you explained: "what is this error, and what do I do?" |
 
@@ -68,8 +68,8 @@ rough, and some mistakes are funny.
 | Command | Input | Output |
 |---|---|---|
 | `uktr` | stdin | stdout |
-| `uktr clip` | clipboard | popup window, result also copied to the clipboard |
-| `uktr shot` | screen region (spectacle + tesseract OCR) | popup window |
+| `uktr clip` | clipboard | chat window, result also copied to the clipboard |
+| `uktr shot` | screen region (spectacle + tesseract OCR) | chat window |
 | `uktr FILE [-o OUT]` | `.pdf` `.epub` `.docx` `.odt` `.html` `.txt` `.md` | `FILE.nl.md` (your language) |
 | `uktr --notify FILE` | same, with notifications (Dolphin menu) | `FILE.nl.md` |
 | `uktr listen [--orig]` | system audio (live) | subtitles in the terminal |
@@ -78,6 +78,15 @@ The target language is your language (`UKTR_LANGUAGE`, else the desktop's). Set 
 translate to another one. The output file gets the language code: `FILE.nl.md` for Dutch,
 `FILE.en.md` for English. Long text goes to the model in chunks of about 1500 characters,
 split at paragraph breaks.
+
+From the hotkeys, the translation opens in the `ask` chat window: it appears while the model
+writes it (the first words after about 2 s), part after part for a long text, and Esc stops
+it. The text shows exactly as it was written, line for line. When it is complete, it is also
+on the clipboard. Then ask about it ("what does this word mean?", "is this formal?"): those
+questions go to the chat model (`ASK_MODEL`), because a translation model cannot chat; the
+first one takes a few seconds more while FastFlowLM switches models. The chat is saved with
+the other `ask` chats (with a 🌐 title). Without PySide6, or with `UKTR_WINDOW=0`, the
+translation shows in a plain text box instead.
 
 ### `uktr listen`
 
@@ -279,7 +288,7 @@ sudo pacman -S --needed wl-clipboard kdialog libnotify spectacle pyside6 \
 | Package | Needed for |
 |---|---|
 | wl-clipboard, kdialog, libnotify | the hotkeys: clipboard, popup, notifications |
-| PySide6 | the `ask` window, also for `eli12` (without it, `ask` opens in Konsole and `eli12` in a text box) |
+| PySide6 | the `ask` window, also for `eli12` and `uktr` (without it, `ask` opens in Konsole, `eli12` and `uktr` in a text box) |
 | spectacle | `uktr shot`, `ask --screen` |
 | tesseract with Ukrainian data | `uktr shot` (OCR) |
 | poppler (`pdftotext`), pandoc | PDF, and epub/docx/odt/html files |
@@ -478,6 +487,7 @@ with the same name override the file. See `config.example`.
 | `ELI12_SENTENCES` | `5` | longest explanation for `eli12`, in sentences |
 | `ELI12_LANG` | `UKTR_LANGUAGE` | language for `eli12` (a code, a name, or `both`) |
 | `ELI12_WINDOW` | `1` | `0`: show the explanation in a plain text box, not in the chat window |
+| `UKTR_WINDOW` | `1` | `0`: show the translation (`clip`, `shot`) in a plain text box, not in the chat window |
 | `FIX_MODEL` | `qwen3.5:9b` | chat model for `fixtext` |
 | `ASK_MODEL` | `qwen3.5:9b` | chat model for `ask` (must read images for `--screen`) |
 | `ASK_HISTORY` | `1` | `0`: do not save `ask` chats |
