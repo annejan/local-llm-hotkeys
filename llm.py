@@ -288,11 +288,20 @@ def notify(msg, app, timeout=3000):
     subprocess.run(["notify-send", "-a", app, "-t", str(timeout), app, html.escape(msg)])
 
 
+def textbox_lines(text):
+    """The lines of text as kdialog --textbox must get them, so that it shows them as they are.
+    kdialog shows a line that starts with an HTML tag as rich text: a translated document
+    could then hide part of its own translation (a span in a 1 px font) or lose its tags. Each
+    line is made explicit rich text with the characters escaped, and white space kept."""
+    return [f'<qt><span style="white-space:pre-wrap">{html.escape(line)}</span></qt>'
+            for line in text.split("\n")]
+
+
 def popup(title, text):
-    """Show text in a window; it is also copied to the clipboard."""
+    """Show text in a window; it is also copied to the clipboard (as it is)."""
     copy(text)
     with tempfile.NamedTemporaryFile("w", suffix=".txt", encoding="utf-8") as f:
-        f.write(text)
+        f.write("\n".join(textbox_lines(text)))
         f.flush()
         subprocess.run(["kdialog", "--title", title, "--textbox", f.name, "800", "500"])
 

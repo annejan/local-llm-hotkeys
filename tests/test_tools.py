@@ -110,6 +110,12 @@ class Desktop(unittest.TestCase):
         # A bidi override turns "pay 10 EUR" into "pay 01 EUR" on screen; zero-width characters hide.
         self.assertEqual(llm.plain("pay \u202e01\u202c EUR\u200b"), "pay 01 EUR")
 
+    def test_textbox_lines(self):
+        lines = llm.textbox_lines("a <b>x</b> & y\n\n| a   | b |")
+        self.assertEqual(len(lines), 3)
+        self.assertEqual(lines[0], '<qt><span style="white-space:pre-wrap">a &lt;b&gt;x&lt;/b&gt; &amp; y</span></qt>')
+        self.assertIn("| a   | b |", lines[2])
+
     def test_notify_escapes_markup(self):
         calls = []
         real, llm.subprocess.run = llm.subprocess.run, lambda cmd, **kw: calls.append(cmd)
