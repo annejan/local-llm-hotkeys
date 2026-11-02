@@ -1,0 +1,50 @@
+name: Release files
+
+# For every v* tag: build the source tarball and SHA256SUMS, sign where they came from with a
+# GitHub attestation (Sigstore, no keys to manage), and attach them to the GitHub release.
+# Check a download with:  gh attestation verify FILE -R annejan/local-llm-hotkeys
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to (re)build the release files for, e.g. v0.1.0
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # attach the files to the release
+      id-token: write      # sign the attestation (Sigstore)
+      attestations: write  # store the attestation on GitHub
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build the tarball and SHA256SUMS
+        run: |
+          git rev-parse --verify --quiet "refs/tags/$TAG" > /dev/null || { echo "no tag $TAG"; exit 1; }
+          mkdir dist
+          name="local-llm-hotkeys-${TAG#v}"
+          git archive --format=tar.gz --prefix="$name/" -o "dist/$name.tar.gz" "$TAG"
+          (cd dist && sha256sum -- *.tar.gz > SHA256SUMS && cat SHA256SUMS)
+      - name: Attest where the files came from
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: dist/*
+      - name: Attach the files to the release
+        run: |
+          if ! gh release view "$TAG" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --verify-tag --draft --title "$TAG" \
+              --notes "Release notes follow."
+          fi
+          gh release upload "$TAG" dist/* -R "$GITHUB_REPOSITORY" --clobber

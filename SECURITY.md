@@ -17,6 +17,11 @@ address in that key:
 
 Check that the fingerprint of the key you downloaded is the same before you use it.
 
+## Releases
+
+Release files are attested by GitHub and `SHA256SUMS` is signed with the key above; see
+"Check a release download" in the README.
+
 ## Things to know
 
 - `dictate` creates a virtual keyboard through `/dev/uinput` to paste text. The udev rule in

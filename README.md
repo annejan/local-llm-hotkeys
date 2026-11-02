@@ -290,6 +290,18 @@ Run it again after an update; it changes only what is missing or new. `./install
 also installs and starts the FastFlowLM service, and `./install.sh --uninstall` removes
 everything it added (your config and saved chats stay).
 
+### Check a release download
+
+Every release has a source tarball and `SHA256SUMS`. GitHub signs where they came from (built
+by this repository's release workflow, from that tag), and the maintainer signs `SHA256SUMS`
+with OpenPGP:
+
+```sh
+gh attestation verify local-llm-hotkeys-0.1.0.tar.gz -R annejan/local-llm-hotkeys
+sha256sum -c SHA256SUMS
+gpg --verify SHA256SUMS.asc SHA256SUMS   # key and fingerprint: see SECURITY.md
+```
+
 ### Install by hand
 
 ```sh
