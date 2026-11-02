@@ -2,6 +2,7 @@
 import io
 import os
 import socket
+import stat
 import sys
 import tempfile
 import threading
@@ -221,6 +222,8 @@ class Ask(unittest.TestCase):
                 self.assertNotEqual(a.path, b.path)
                 self.assertEqual(sorted(t for _, t, _, _ in ask.saved_chats()), ["first", "second"])
                 self.assertEqual(ask.Chat.load(a.path).turns, a.turns)
+                self.assertEqual(stat.S_IMODE(os.stat(d).st_mode), 0o700)
+                self.assertEqual(stat.S_IMODE(os.stat(a.path).st_mode), 0o600)
             finally:
                 ask.SAVE_DIR, ask.SAVE = real
 

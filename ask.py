@@ -107,7 +107,9 @@ class Chat:
         if not self.save or not self.turns:
             return
         if not self.path:
-            os.makedirs(SAVE_DIR, exist_ok=True)
+            # Only you can read the chats: they can hold screenshots of private things.
+            os.makedirs(SAVE_DIR, mode=0o700, exist_ok=True)
+            os.chmod(SAVE_DIR, 0o700)  # also a folder made by an older version
             name = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
             path, n = os.path.join(SAVE_DIR, name + ".json"), 1
             while os.path.exists(path):  # two chats started in the same second
@@ -115,7 +117,7 @@ class Chat:
                 path = os.path.join(SAVE_DIR, f"{name}-{n}.json")
             self.path = path
         tmp = self.path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
+        with open(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8") as f:
             json.dump({"model": MODEL, "title": self.title, "turns": self.turns}, f,
                       ensure_ascii=False, indent=1)
         os.replace(tmp, self.path)  # a crash never leaves half a file
