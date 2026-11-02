@@ -13,7 +13,11 @@ desktop-file-validate kde/*.desktop
 ```
 
 CI runs the same checks, plus `tests/distro-packages.sh` in openSUSE, Debian, Ubuntu, Fedora
-and Arch containers. If you add a dependency, add its package name for each distribution to
+and Arch containers.
+
+After a model or prompt change, run `tests/injection.py` by hand (it needs the model server):
+it shows how often a hidden instruction in a text steers eli12 and uktr. See the numbers in
+[#5](https://github.com/annejan/local-llm-hotkeys/issues/5) for what to expect. If you add a dependency, add its package name for each distribution to
 `pkg()` in `install.sh`, and to the install lines in the README.
 
 ## Guidelines
