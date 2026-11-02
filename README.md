@@ -1,5 +1,7 @@
 # local-llm-hotkeys
 
+[![CI](https://github.com/annejan/local-llm-hotkeys/actions/workflows/ci.yml/badge.svg)](https://github.com/annejan/local-llm-hotkeys/actions/workflows/ci.yml)
+
 **Your laptop has an AI key. Make it do something, on your own NPU.**
 
 New laptops have a Copilot key. On Linux it does nothing. This project gives it four jobs,
