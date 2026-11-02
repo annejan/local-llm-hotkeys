@@ -28,17 +28,18 @@ MODEL = conf.get("UKTR_MODEL", "translategemma:4b")
 SUFFIX, TO = llm.parse_language(conf["UKTR_TO"]) if conf.get("UKTR_TO") else llm.language()
 # SUFFIX names the output file: FILE.nl.md for Dutch, FILE.en.md for English, ...
 
-SYSTEM = (f"You are a translator. Translate the user's text to {TO}. "
+SYSTEM = ("You are a translator. Translate the user's text to {to}. "
           "Output only the translation, keep paragraph breaks and markdown, add no comments.")
 
 
-def translate(text, model=None):
-    model = model or MODEL
+def translate(text, model=None, to=None):
+    """Translate text to `to` (a language name; default TO, your language)."""
+    model, to = model or MODEL, to or TO
     if "hy-mt" in model.lower():
         # Hunyuan-MT is tuned on this exact user-only prompt; a system prompt makes it worse.
         return llm.chat([{"role": "user", "content": f"Translate the following segment into "
-                          f"{TO}, without additional explanation.\n\n{text}"}], model)
-    return llm.complete(SYSTEM, text, model)
+                          f"{to}, without additional explanation.\n\n{text}"}], model)
+    return llm.complete(SYSTEM.format(to=to), text, model)
 
 
 def translate_long(text, out, progress=False):

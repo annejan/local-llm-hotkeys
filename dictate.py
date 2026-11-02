@@ -4,6 +4,9 @@
   dictate           start listening (KDE hotkey Meta+Shift+D); it stops after a pause in
                     your speech, or when you press the hotkey again
   dictate --print   the same from a terminal: print the text instead of typing it
+  dictate --translate [--print]
+                    the same, but the text is translated first (to DICTATE_TO, default
+                    English): speak your language, type another (Meta+Ctrl+Shift+D)
 
 The text is typed by pasting: it goes on the clipboard and the primary selection, and a
 virtual keyboard presses Shift+Insert (that pastes in Qt, GTK, browsers and Konsole). This
@@ -15,6 +18,7 @@ Uses the same server and config file as uktr (~/.config/uktr/config, UKTR_ASR_UR
   DICTATE_SILENCE   microphone level that counts as quiet, default 150
   DICTATE_PAUSE     seconds of quiet after speech that end the dictation, default 2
   DICTATE_MAX       longest dictation in seconds, default 120
+  DICTATE_TO        language for --translate, default English
 """
 import os
 import signal
@@ -24,11 +28,13 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 import llm
+import uktr
 
 LANG = llm.conf["DICTATE_LANG"] if "DICTATE_LANG" in llm.conf else llm.language()[0]
 SILENCE = float(llm.conf.get("DICTATE_SILENCE", "150"))
 PAUSE = float(llm.conf.get("DICTATE_PAUSE", "2"))
 MAX = float(llm.conf.get("DICTATE_MAX", "120"))
+TO = llm.parse_language(llm.conf.get("DICTATE_TO", "English"))[1]
 WAIT = 8  # seconds to wait for the first word before giving up
 BLOCK = llm.RATE // 4 * 2  # 0.25 s of 16 kHz s16 audio, in bytes
 PIDFILE = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "dictate.pid")
@@ -106,15 +112,23 @@ def record(log=print):
     return bytes(audio) if heard else b""
 
 
+def text_of(audio, translate):
+    """What was said, translated to TO with translate=True ("" if nothing was said)."""
+    text = llm.transcribe(audio, LANG) if audio else ""
+    return uktr.translate(text, to=TO) if text and translate else text
+
+
 def main(argv):
     if argv[:1] in (["-h"], ["--help"]):
         return print(__doc__)
+    translate = "--translate" in argv
+    argv = [a for a in argv if a != "--translate"]
     if argv == ["--print"]:
         with llm.errors("dictate", gui=False):
-            print(f"listening ({LANG or 'any language'}); stop talking or press Ctrl+C…",
+            to = f" → {TO}" if translate else ""
+            print(f"listening ({LANG or 'any language'}{to}); stop talking or press Ctrl+C…",
                   file=sys.stderr)
-            audio = record()
-            print(llm.transcribe(audio, LANG) if audio else "(nothing heard)")
+            print(text_of(record(), translate) or "(nothing heard)")
         return
     if argv:
         sys.exit(__doc__)
@@ -131,11 +145,9 @@ def main(argv):
                 keyboard = Keyboard()
             except OSError:
                 keyboard = None  # no /dev/uinput access: the text stays on the clipboard
-            llm.notify("listening… (stop talking, or press the hotkey again)", "dictate", 2500)
-            audio = record()
-            if not audio:
-                return llm.notify("nothing heard", "dictate")
-            text = llm.transcribe(audio, LANG)
+            to = f", typed in {TO}" if translate else ""
+            llm.notify(f"listening{to}… (stop talking, or press the hotkey again)", "dictate", 2500)
+            text = text_of(record(), translate)
             if not text:
                 return llm.notify("nothing heard", "dictate")
             llm.copy(text)

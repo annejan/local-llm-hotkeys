@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=dictate: speak, and the translation is typed
+Comment=Speak your language; Whisper and the translation model on the NPU type it in another language (DICTATE_TO, default English)
+Exec=dictate --translate
+Icon=audio-input-microphone
+Categories=Utility;
+X-KDE-Shortcuts=Meta+Ctrl+Shift+D

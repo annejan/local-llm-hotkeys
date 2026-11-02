@@ -39,6 +39,7 @@ key? Every action also has a Meta+Shift shortcut.
 | Meta+Shift+Y | translate a screen region (`uktr shot`) |
 | Meta+Shift+F | fix spelling and grammar of the clipboard (`fixtext clip`) |
 | Meta+Shift+D | dictate: speak, and the text is typed into the active window (`dictate`) |
+| Meta+Ctrl+Shift+D | dictate and translate: speak your language, English is typed (`dictate --translate`) |
 
 In Dolphin, right-click a document for "Translate (uktr)" and "Explain like I'm 12 (eli12)".
 AltGr works as Alt. See [Install](#install) for the setup and [the Copilot key](#the-copilot-key).
@@ -208,6 +209,7 @@ that has the focus: a chat, an email, a terminal.
 |---|---|---|
 | `dictate` | microphone | typed into the active window |
 | `dictate --print` | microphone | stdout |
+| `dictate --translate` | microphone | translated, typed into the active window (Meta+Ctrl+Shift+D) |
 
 You speak your language (`DICTATE_LANG`, default `UKTR_LANGUAGE`). The text is typed by
 pasting: it goes on the clipboard and the primary selection, and a virtual keyboard presses
@@ -215,6 +217,10 @@ Shift+Insert, which pastes in Qt and GTK apps, browsers and Konsole. The virtual
 needs write access to `/dev/uinput`. KDE Connect installs a udev rule that gives it to the logged-in user (on Debian and Ubuntu, see [Requirements](#requirements));
 check with `test -w /dev/uinput && echo ok`. Without it, the text stays on the clipboard for
 Ctrl+V.
+
+With `--translate` (Meta+Ctrl+Shift+D) you speak your language and the text is typed in
+another one: `DICTATE_TO`, default English. Handy for an email or a chat with someone who does
+not read your language. The translation model is `UKTR_MODEL`.
 
 If it stops too early or does not stop, set `DICTATE_SILENCE` (the microphone level that
 counts as quiet, default 150) or `DICTATE_PAUSE` (seconds, default 2).
@@ -389,7 +395,10 @@ openSUSE Tumbleweed, kernel 7.2+. Without such an NPU, use ollama (see [Models](
   the model name contains `hy-mt`.
 - `qwen3.5:9b`: a chat model that also reads images. eli12, fixtext and ask use it.
 - FLM loads one language model at a time (Whisper stays loaded next to it), so the first
-  request after a change of model (for example translate, then chat) takes a few seconds more.
+  request after a change of model (for example translate, then chat) takes about 5 s more.
+  To avoid that, set `UKTR_MODEL=qwen3.5:9b`: one model for everything. Its translations are
+  not better than translategemma's (we compared Ukrainian, German and Russian to Dutch: both
+  make some mistakes) and take about twice as long, so it only pays off if you often switch.
 - With ollama, any chat model works for translation too (for example `gemma4:12b`); it gets
   a system prompt that tells it to output only the translation. Set `ELI12_MODEL`,
   `FIX_MODEL` and `ASK_MODEL` to a chat model that you have.
@@ -422,6 +431,7 @@ with the same name override the file. See `config.example`.
 | `DICTATE_SILENCE` | `150` | microphone level that counts as quiet |
 | `DICTATE_PAUSE` | `2` | seconds of quiet after speech that end a dictation |
 | `DICTATE_MAX` | `120` | longest dictation, in seconds |
+| `DICTATE_TO` | `English` | language that `dictate --translate` types |
 | `ASK_SCREEN_PROMPT` | (English, answer in your language) | first question for `ask --screen`; `{language}` = your language |
 
 Example, one-off: translate to German, and subtitles for Russian audio:

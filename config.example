@@ -43,3 +43,4 @@ UKTR_LISTEN_MODEL=hy-mt2-flash:1.8b
 #DICTATE_LANG=nl   # language you speak; default UKTR_LANGUAGE; empty = Whisper guesses
 #DICTATE_SILENCE=150   # microphone level that counts as quiet
 #DICTATE_PAUSE=2   # seconds of quiet after speech that end a dictation
+#DICTATE_TO=English   # language that dictate --translate types
