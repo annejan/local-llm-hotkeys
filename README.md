@@ -36,6 +36,7 @@ key? Every action also has a Meta+Shift shortcut.
 | Alt+Copilot or Meta+Shift+T | translate the clipboard to your language (`uktr clip`) |
 | Ctrl+Copilot or Meta+Shift+E | explain the clipboard (`eli12 clip`) |
 | Ctrl+Alt+Copilot or Meta+Shift+W | explain the active window (`ask --screen`) |
+| Meta+Shift+X | explain a screen region that you select (`ask --region`) |
 | Meta+Shift+Y | translate a screen region (`uktr shot`) |
 | Meta+Shift+F | fix spelling and grammar of the clipboard (`fixtext clip`) |
 | Meta+Shift+D | dictate: speak, and the text is typed into the active window (`dictate`) |
@@ -172,6 +173,7 @@ KDE Plasma 6.8 on Wayland"), so commands fit your system.
 |---|---|---|
 | `ask --popup` | chat window | chat window |
 | `ask --screen` | screenshot of the active window | chat window |
+| `ask --region` | screenshot of a region that you select | chat window |
 | `ask` | chat in the terminal (`/new` starts a new chat, Ctrl+D or `/quit` quits) | terminal |
 | `ask --list` | saved chats, newest first | stdout |
 | `ask --resume [N]` | continue saved chat N (default 1, the newest) | terminal |
@@ -182,11 +184,14 @@ Model: `ASK_MODEL`, default `qwen3.5:9b`. The first words come after about 1 s. 
 conversation gets longer than about 24,000 characters, the oldest messages are dropped. A 9B
 model makes mistakes, so check facts that matter.
 
-### Explain the active window
+### Explain the active window or a region
 
 Ctrl+Alt+Copilot or Meta+Shift+W (`ask --screen`) takes a screenshot of the active window and
 opens the chat with it. The model says what is on the screen, and explains an error, a question or a choice
 if there is one. Then ask follow-up questions about it ("what does this setting do?").
+
+For one error message in a big window, press Meta+Shift+X (`ask --region`) instead and drag a
+rectangle around it. Press Esc to cancel.
 
 `qwen3.5:9b` reads images, so this is the same model as the chat: about 8 s for the first
 answer on the NPU. The screenshot is scaled to 1280 pixels and saved with the chat. Set

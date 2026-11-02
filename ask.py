@@ -3,7 +3,8 @@
 
   ask --popup           chat window (KDE hotkey Meta+Shift+Q or Copilot; needs PySide6)
   ask --screen          screenshot of the active window -> chat window that explains it
-                        (Ctrl+Alt+Copilot); ask follow-up questions about it
+                        (Ctrl+Alt+Copilot or Meta+Shift+W); ask follow-up questions about it
+  ask --region          the same for a screen region that you select (Meta+Shift+X)
   ask                   chat in the terminal (/new starts a new chat, Ctrl+D or /quit quits)
   ask --list            saved chats, newest first
   ask --resume [N]      continue saved chat N in the terminal (default 1, the newest)
@@ -157,13 +158,15 @@ def images_of(content):
     return [p["image_url"]["url"] for p in content if p.get("type") == "image_url"]
 
 
-def screenshot():
-    """The active window as a JPEG data URL (longest side IMAGE_SIZE), or None if it failed."""
+def screenshot(region=False):
+    """The active window, or a region you select, as a JPEG data URL (longest side
+    IMAGE_SIZE). None if it failed or the selection was cancelled."""
     from PySide6.QtCore import QBuffer, Qt
     from PySide6.QtGui import QImage
     with tempfile.TemporaryDirectory() as d:
-        png = os.path.join(d, "window.png")
-        subprocess.run(["spectacle", "--activewindow", "--background", "--nonotify", "-o", png],
+        png = os.path.join(d, "shot.png")
+        mode = "--region" if region else "--activewindow"
+        subprocess.run(["spectacle", mode, "--background", "--nonotify", "-o", png],
                        capture_output=True)
         image = QImage(png)
     if image.isNull():
@@ -539,11 +542,14 @@ def main(argv):
         return print(__doc__)
     if argv == ["--popup"]:
         return window()
-    if argv == ["--screen"]:
+    if argv in (["--screen"], ["--region"]):
         # Take the screenshot before our window opens and becomes the active window.
         with llm.errors("ask", gui=True):
-            shot = screenshot()
-            if not shot:
+            if argv == ["--region"]:
+                shot = screenshot(region=True)
+                if not shot:
+                    return  # selection cancelled
+            elif not (shot := screenshot()):
                 raise llm.Error("screenshot failed (is spectacle installed?)")
         prompt = SCREEN_PROMPT.replace("{language}", llm.language()[1])
         return window([{"type": "text", "text": prompt},
