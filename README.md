@@ -36,19 +36,21 @@ key? Every action also has a Meta+Shift shortcut.
 | Ctrl+Alt+Copilot | explain the active window (`ask --screen`) |
 | Meta+Shift+Y | translate a screen region (`uktr shot`) |
 | Meta+Shift+F | fix spelling and grammar of the clipboard (`fixtext clip`) |
+| Meta+Shift+D | dictate: speak, and the text is typed into the active window (`dictate`) |
 
 In Dolphin, right-click a document for "Translate (uktr)" and "Explain like I'm 12 (eli12)".
 AltGr works as Alt. See [Install](#install) for the setup and [the Copilot key](#the-copilot-key).
 
-### The four tools
+### The tools
 
 - **uktr**: rough translation of Ukrainian (or any other language) to your language: the
   clipboard, a screen region, documents, or live subtitles for audio.
 - **eli12**: explains a text like you are 12.
 - **fixtext**: fixes spelling and grammar of the clipboard.
 - **ask**: a chat window for quick questions and follow-ups, also about a screenshot.
+- **dictate**: speak, and the text is typed into the active window.
 
-All four talk to any OpenAI-compatible server. The default setup runs everything on the NPU
+All of them talk to any OpenAI-compatible server. The default setup runs everything on the NPU
 with [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM); ollama on a GPU also works.
 Python standard library only, except the `ask` chat window, which uses PySide6.
 
@@ -194,6 +196,27 @@ Every chat from the window or the terminal is saved after each answer, as a JSON
 it and ask more. Right-click or Del removes a chat (after a confirmation). One-shot questions
 (`ask QUESTION`, `ask < question`) are not saved. Set `ASK_HISTORY=0` to save nothing.
 
+## dictate: speak instead of type
+
+Press Meta+Shift+D and speak. When you stop talking for 2 seconds (or press Meta+Shift+D
+again), Whisper on the NPU writes down what you said, and the text is typed into the window
+that has the focus: a chat, an email, a terminal.
+
+| Command | Input | Output |
+|---|---|---|
+| `dictate` | microphone | typed into the active window |
+| `dictate --print` | microphone | stdout |
+
+You speak your language (`DICTATE_LANG`, default `UKTR_LANGUAGE`). The text is typed by
+pasting: it goes on the clipboard and the primary selection, and a virtual keyboard presses
+Shift+Insert, which pastes in Qt and GTK apps, browsers and Konsole. The virtual keyboard
+needs write access to `/dev/uinput`. KDE Connect (`kdeconnect-kde`) installs a udev rule that
+gives it to the logged-in user; check with `test -w /dev/uinput && echo ok`. Without it, the
+text stays on the clipboard for Ctrl+V.
+
+If it stops too early or does not stop, set `DICTATE_SILENCE` (the microphone level that
+counts as quiet, default 150) or `DICTATE_PAUSE` (seconds, default 2).
+
 ## Install
 
 ### Requirements
@@ -207,7 +230,8 @@ On openSUSE Tumbleweed:
 
 ```sh
 sudo zypper install wl-clipboard kdialog libnotify-tools spectacle python313-pyside6 \
-    tesseract-ocr tesseract-ocr-traineddata-ukr poppler-tools pandoc-cli pulseaudio-utils
+    tesseract-ocr tesseract-ocr-traineddata-ukr poppler-tools pandoc-cli pulseaudio-utils \
+    kdeconnect-kde
 ```
 
 | Package | Needed for |
@@ -217,7 +241,8 @@ sudo zypper install wl-clipboard kdialog libnotify-tools spectacle python313-pys
 | `spectacle` | `uktr shot`, `ask --screen` |
 | `tesseract-ocr`, `tesseract-ocr-traineddata-ukr` | `uktr shot` (OCR) |
 | `poppler-tools` (`pdftotext`), `pandoc-cli` | PDF, and epub/docx/odt/html files |
-| `pulseaudio-utils` (`parec`) | `uktr listen` |
+| `pulseaudio-utils` (`parec`) | `uktr listen`, `dictate` |
+| `kdeconnect-kde` | `dictate` types into the active window (udev rule for `/dev/uinput`) |
 
 ### The tools
 
@@ -225,7 +250,7 @@ sudo zypper install wl-clipboard kdialog libnotify-tools spectacle python313-pys
 git clone https://github.com/annejan/local-llm-hotkeys.git
 cd local-llm-hotkeys
 mkdir -p ~/.local/bin ~/.config/uktr
-for tool in uktr eli12 fixtext ask; do ln -s "$PWD/$tool.py" ~/.local/bin/$tool; done
+for tool in uktr eli12 fixtext ask dictate; do ln -s "$PWD/$tool.py" ~/.local/bin/$tool; done
 cp config.example ~/.config/uktr/config
 ```
 
@@ -287,7 +312,7 @@ Tested on a Ryzen AI 7 PRO 350 (XDNA2) with openSUSE Tumbleweed, kernel 7.2+ (`a
    ```sh
    flm pull translategemma:4b    # translation (uktr), ~4.5 GB
    flm pull hy-mt2-flash:1.8b    # fast translation (uktr listen), ~1.4 GB
-   flm pull whisper-v3:turbo     # speech-to-text (uktr listen), ~0.6 GB
+   flm pull whisper-v3:turbo     # speech-to-text (uktr listen, dictate), ~0.6 GB
    flm pull qwen3.5:9b           # chat and images (eli12, fixtext, ask)
    ```
 
@@ -342,6 +367,10 @@ with the same name override the file. See `config.example`.
 | `FIX_MODEL` | `qwen3.5:9b` | chat model for `fixtext` |
 | `ASK_MODEL` | `qwen3.5:9b` | chat model for `ask` (must read images for `--screen`) |
 | `ASK_HISTORY` | `1` | `0`: do not save `ask` chats |
+| `DICTATE_LANG` | `UKTR_LANGUAGE` | language you speak to `dictate` (empty = Whisper guesses) |
+| `DICTATE_SILENCE` | `150` | microphone level that counts as quiet |
+| `DICTATE_PAUSE` | `2` | seconds of quiet after speech that end a dictation |
+| `DICTATE_MAX` | `120` | longest dictation, in seconds |
 | `ASK_SCREEN_PROMPT` | (English, answer in your language) | first question for `ask --screen`; `{language}` = your language |
 
 Example, one-off: translate to German, and subtitles for Russian audio:

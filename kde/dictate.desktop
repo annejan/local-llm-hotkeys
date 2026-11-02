@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=dictate: speak, and the text is typed
+Comment=Whisper on the NPU writes down what you say, in the active window; press again to stop
+Exec=dictate
+Icon=audio-input-microphone
+Categories=Utility;
+X-KDE-Shortcuts=Meta+Shift+D

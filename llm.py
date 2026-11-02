@@ -1,7 +1,7 @@
-"""Shared code for uktr, eli12, fixtext and ask: config, the LLM server, clipboard, popups.
+"""Shared code for uktr, eli12, fixtext, ask and dictate: config, the LLM server, clipboard, popups.
 
 Config: ~/.config/uktr/config (KEY=value lines, # comments), overridden by environment
-variables that start with UKTR_, ELI12_, FIX_ or ASK_.
+variables that start with UKTR_, ELI12_, FIX_, ASK_ or DICTATE_.
 """
 import contextlib
 import json
@@ -12,7 +12,7 @@ import tempfile
 import urllib.request
 
 CONFIG = os.path.expanduser("~/.config/uktr/config")
-PREFIXES = ("UKTR_", "ELI12_", "FIX_", "ASK_")
+PREFIXES = ("UKTR_", "ELI12_", "FIX_", "ASK_", "DICTATE_")
 
 
 def read_config(path=CONFIG, environ=None):
@@ -128,6 +128,58 @@ def chunks(text, size=1500):
         buf = f"{buf}\n\n{para}" if buf else para
     if buf.strip():
         yield buf
+
+
+# --- audio: Whisper speech-to-text ---
+
+RATE = 16000  # Whisper wants 16 kHz mono
+# Whisper invents these on silence or noise; such a result counts as nothing heard.
+HALLUCINATIONS = ("thank you", "thanks for watching", "дякую за перегляд", "субтитри",
+                  "продолжение следует", "спасибо за просмотр", "редактор субтитров",
+                  "bedankt voor het kijken", "ondertiteling", "untertitel")
+
+
+def wav_bytes(pcm):
+    import io
+    import wave
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(RATE)
+        w.writeframes(pcm)
+    return buf.getvalue()
+
+
+def transcribe(pcm, lang=""):
+    """Text of 16 kHz mono s16 audio ("" for nothing or a known hallucination).
+    lang: a code such as uk or nl; "" lets Whisper guess (unreliable on short audio)."""
+    boundary = "uktrboundary7d1f"
+    fields = {"model": conf.get("UKTR_ASR_MODEL", "whisper-v3:turbo"), "response_format": "json"}
+    if lang:
+        fields["language"] = lang
+    body = b"".join(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
+                    for k, v in fields.items())
+    body += (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="a.wav"\r\n'
+             "Content-Type: audio/wav\r\n\r\n").encode() + wav_bytes(pcm) + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(conf.get("UKTR_ASR_URL", URL).rstrip("/") + "/audio/transcriptions",
+                                 body, {"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        text = json.load(r).get("text", "").strip()
+    if not any(c.isalnum() for c in text) or text.lower().strip(" .!…") in HALLUCINATIONS:
+        return ""  # "***", "..." or a known hallucination: nothing was said
+    return text
+
+
+def rms(pcm):
+    """Loudness of s16 audio (every 4th sample is enough). The average is taken off first:
+    some microphones add a constant offset (here -4678) that is not sound."""
+    import array
+    a = array.array("h", pcm)[::4]
+    if not a:
+        return 0.0
+    mean = sum(a) / len(a)
+    return (sum((x - mean) ** 2 for x in a) / len(a)) ** 0.5
 
 
 # --- files ---

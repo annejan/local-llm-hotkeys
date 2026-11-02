@@ -15,12 +15,10 @@ Backend is any OpenAI-compatible server, set in ~/.config/uktr/config or env:
   UKTR_LISTEN_MODEL  translation model for `listen` (default UKTR_MODEL)
   UKTR_LANG   spoken language for `listen`, default uk ("" = Whisper guesses)
 """
-import json
 import os
 import subprocess
 import sys
 import tempfile
-import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 import llm  # noqa: E402
@@ -89,42 +87,7 @@ def screen_text():
 
 # --- uktr listen ---
 
-RATE = 16000  # Whisper wants 16 kHz mono
-HALLUCINATIONS = ("thank you", "thanks for watching", "дякую за перегляд", "субтитри",
-                  "продолжение следует", "спасибо за просмотр", "редактор субтитров")
-
-
-def wav_bytes(pcm):
-    import io
-    import wave
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(RATE)
-        w.writeframes(pcm)
-    return buf.getvalue()
-
-
-def transcribe(pcm, lang):
-    boundary = "uktrboundary7d1f"
-    fields = {"model": conf.get("UKTR_ASR_MODEL", "whisper-v3:turbo"), "response_format": "json"}
-    if lang:
-        fields["language"] = lang
-    body = b"".join(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
-                    for k, v in fields.items())
-    body += (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="a.wav"\r\n'
-             "Content-Type: audio/wav\r\n\r\n").encode() + wav_bytes(pcm) + f"\r\n--{boundary}--\r\n".encode()
-    req = urllib.request.Request(conf.get("UKTR_ASR_URL", llm.URL).rstrip("/") + "/audio/transcriptions",
-                                 body, {"Content-Type": f"multipart/form-data; boundary={boundary}"})
-    with urllib.request.urlopen(req, timeout=120) as r:
-        return json.load(r).get("text", "").strip()
-
-
-def rms(pcm):
-    import array
-    a = array.array("h", pcm)
-    return (sum(x * x for x in a[::4]) / max(1, len(a) // 4)) ** 0.5
+RATE = llm.RATE
 
 
 def listen(argv):
@@ -146,8 +109,8 @@ def listen(argv):
         while True:
             t, pcm = jobs.get()
             try:
-                src = transcribe(pcm, lang)
-                if src and src.lower().strip(" .!…") not in HALLUCINATIONS:
+                src = llm.transcribe(pcm, lang)
+                if src:
                     stamp = time.strftime("%H:%M:%S", time.localtime(t))
                     if show_orig:
                         print(f"\033[2m{stamp}  {src}\033[0m", flush=True)
@@ -162,7 +125,7 @@ def listen(argv):
     chunk, levels, start = bytearray(), [], time.time()
     try:
         while (block := rec.stdout.read(win)):
-            level = rms(block)
+            level = llm.rms(block)
             chunk += block
             levels.append(level)
             secs = len(chunk) / (RATE * 2)
