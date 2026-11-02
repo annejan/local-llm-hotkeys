@@ -317,6 +317,29 @@ class Ask(unittest.TestCase):
         self.assertEqual(ask.questions(2), "1 question")
         self.assertEqual(ask.questions(6), "3 questions")
 
+    def test_valid_turn(self):
+        self.assertTrue(ask.valid_turn({"role": "user", "content": "hi"}))
+        self.assertTrue(ask.valid_turn({"role": "user", "content": self.shot}))
+        for bad in ({"role": "system", "content": "x"}, {"role": "user"}, {"role": "user", "content": 3},
+                    {"role": "user", "content": [{"type": "text"}]},
+                    {"role": "user", "content": [{"type": "image_url", "image_url": {}}]}, "hi", None):
+            self.assertFalse(ask.valid_turn(bad), bad)
+
+    def test_broken_files_are_skipped(self):
+        with tempfile.TemporaryDirectory() as d:
+            real, ask.SAVE_DIR = ask.SAVE_DIR, d
+            try:
+                for name, text in (("list.json", "[]"), ("turns.json", '{"turns": 3}'),
+                                   ("title.json", '{"title": {"a": 1}, "turns": []}'), ("bad.json", "{")):
+                    with open(os.path.join(d, name), "w") as f:
+                        f.write(text)
+                self.assertEqual([t for _, t, _, _ in ask.saved_chats()], ["{'a': 1}"])  # a title is a string
+                for name in ("list.json", "turns.json"):
+                    with self.assertRaises(ValueError):
+                        ask.Chat.load(os.path.join(d, name))
+            finally:
+                ask.SAVE_DIR = real
+
     def test_save_and_load(self):
         with tempfile.TemporaryDirectory() as d:
             real = ask.SAVE_DIR, ask.SAVE

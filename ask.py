@@ -27,6 +27,7 @@ import base64
 import contextlib
 import datetime
 import functools
+import html
 import json
 import os
 import re
@@ -91,8 +92,14 @@ class Chat:
 
     @classmethod
     def load(cls, path):
+        """A saved chat. ValueError if the file is not one (only you can write there, but a
+        broken file must not take the window down)."""
         with open(path, encoding="utf-8") as f:
-            return cls(save=True, path=path, turns=json.load(f)["turns"])
+            data = json.load(f)
+        turns = data.get("turns") if isinstance(data, dict) else None
+        if not isinstance(turns, list) or not all(valid_turn(t) for t in turns):
+            raise ValueError(f"{path} is not a saved chat")
+        return cls(save=True, path=path, turns=turns)
 
     @property
     def title(self):
@@ -145,6 +152,19 @@ class Chat:
         finally:
             self.turns.append({"role": "assistant", "content": answer.strip() or "(no answer)"})
             self.write()
+
+
+def valid_turn(turn):
+    """A turn as Chat keeps it: a role and a content that text_of() and images_of() can read."""
+    if not isinstance(turn, dict) or turn.get("role") not in ("user", "assistant"):
+        return False
+    content = turn.get("content")
+    if isinstance(content, str):
+        return True
+    return isinstance(content, list) and all(
+        isinstance(p, dict) and (p.get("type") != "text" or isinstance(p.get("text"), str))
+        and (p.get("type") != "image_url" or isinstance((p.get("image_url") or {}).get("url"), str))
+        for p in content)
 
 
 def text_of(content):
@@ -205,10 +225,10 @@ def saved_chats():
             if _seen.get(path, (None,))[0] != mtime:
                 with open(path, encoding="utf-8") as f:
                     data = json.load(f)
-                _seen[path] = (mtime, data.get("title") or name, len(data.get("turns", [])))
+                _seen[path] = (mtime, str(data.get("title") or name), len(data.get("turns", [])))
             _, title, n = _seen[path]
             found.append((path, title, datetime.datetime.fromtimestamp(mtime), n))
-        except (OSError, ValueError):
+        except (OSError, ValueError, TypeError, AttributeError):  # not a saved chat
             continue
     return sorted(found, key=lambda c: c[2], reverse=True)
 
@@ -409,7 +429,7 @@ def window(first=None):
             for path, title, when, n in saved_chats():
                 item = QListWidgetItem(f"{title}\n{when_text(when)} · {questions(n)}")
                 item.setData(Qt.UserRole, path)
-                item.setToolTip(title)
+                item.setToolTip(f"<qt>{html.escape(title)}</qt>")  # a tooltip renders tags
                 self.list.addItem(item)
                 if path == self.chat.path:
                     item.setSelected(True)
@@ -593,12 +613,17 @@ def main(argv):
         return
     if argv[:1] == ["--resume"]:
         chats = saved_chats()
-        if len(argv) > 1 and not argv[1].isdigit():
+        try:
+            n = int(argv[1]) if len(argv) > 1 else 1
+        except ValueError:
             sys.exit("usage: ask --resume [N]  (N from ask --list)")
-        n = int(argv[1]) if len(argv) > 1 else 1
         if not 1 <= n <= len(chats):
             sys.exit(f"no saved chat {n} (see ask --list)")
-        return terminal(Chat.load(chats[n - 1][0]))
+        try:
+            chat = Chat.load(chats[n - 1][0])
+        except (OSError, ValueError) as e:
+            sys.exit(f"ask: {e}")
+        return terminal(chat)
     if not argv and sys.stdin.isatty():
         return terminal()
     with llm.errors("ask", gui=False):
