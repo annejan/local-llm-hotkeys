@@ -125,6 +125,9 @@ step "Commands in $BIN"
 mkdir -p "$BIN"
 for t in $TOOLS; do
     if [ -e "$BIN/$t" ] && [ ! -L "$BIN/$t" ]; then warn "$BIN/$t exists and is not a link; left alone"; continue; fi
+    target=$(readlink "$BIN/$t" 2>/dev/null)
+    if [ -e "$BIN/$t" ] && [ "$(basename "$target")" != "$t.py" ]; then  # a link of yours to another program
+        warn "$BIN/$t is a link to $target; left alone"; continue; fi
     ln -sfn "$REPO/$t.py" "$BIN/$t" && ok "$t"
 done
 case ":$PATH:" in *":$BIN:"*) ;; *) warn "$BIN is not in your PATH; add it, or the hotkeys cannot find the commands" ;; esac
