@@ -4,6 +4,7 @@ Config: ~/.config/uktr/config (KEY=value lines, # comments), overridden by envir
 variables that start with UKTR_, ELI12_, FIX_, ASK_ or DICTATE_.
 """
 import contextlib
+import html
 import http.client
 import json
 import os
@@ -278,7 +279,8 @@ def copy(text):
 
 
 def notify(msg, app, timeout=3000):
-    subprocess.run(["notify-send", "-a", app, "-t", str(timeout), app, msg])
+    # The body is markup (Plasma shows links and bold); msg can hold copied text or a file name.
+    subprocess.run(["notify-send", "-a", app, "-t", str(timeout), app, html.escape(msg)])
 
 
 def popup(title, text):

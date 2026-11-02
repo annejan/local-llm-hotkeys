@@ -107,6 +107,16 @@ class Desktop(unittest.TestCase):
     def test_plain(self):
         self.assertEqual(llm.plain("x\x1b[31my\x7f\r\nz\tö"), "x[31my\nz\tö")
 
+    def test_notify_escapes_markup(self):
+        calls = []
+        real, llm.subprocess.run = llm.subprocess.run, lambda cmd, **kw: calls.append(cmd)
+        try:
+            llm.notify('<a href="https://x">a & b</a>', "uktr")
+        finally:
+            llm.subprocess.run = real
+        self.assertEqual(calls[0][-1], "&lt;a href=&quot;https://x&quot;&gt;a &amp; b&lt;/a&gt;")
+
+
 class Output(unittest.TestCase):
     def test_writes_and_overwrites(self):
         with tempfile.TemporaryDirectory() as d:
