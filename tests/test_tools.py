@@ -166,6 +166,14 @@ class Run(unittest.TestCase):
         self.assertIn("not installed", str(e.exception))
 
 
+class Audio(unittest.TestCase):
+    def test_rms_odd_length_block(self):
+        self.assertEqual(llm.rms(b"\x00\x00\x00"), 0.0)
+        self.assertEqual(llm.rms(b""), 0.0)
+        loud = b"\x00\x10" + bytes(6) + b"\x00\xf0" + bytes(6)  # samples 0 and 4 differ (every 4th counts)
+        self.assertGreater(llm.rms(loud + b"\x01"), 0)
+
+
 class Dictate(unittest.TestCase):
     def test_stop_signal_is_caught(self):
         """After catch_stop(), the hotkey's SIGUSR1 ends the recording, not the process."""

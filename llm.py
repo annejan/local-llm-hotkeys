@@ -234,7 +234,7 @@ def rms(pcm):
     """Loudness of s16 audio (every 4th sample is enough). The average is taken off first:
     some microphones add a constant offset (here -4678) that is not sound."""
     import array
-    a = array.array("h", pcm)[::4]
+    a = array.array("h", pcm[:len(pcm) & ~1])[::4]  # a short last block from parec can be odd
     if not a:
         return 0.0
     mean = sum(a) / len(a)
