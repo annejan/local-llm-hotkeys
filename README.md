@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/annejan/local-llm-hotkeys/actions/workflows/ci.yml/badge.svg)](https://github.com/annejan/local-llm-hotkeys/actions/workflows/ci.yml)
 
-**Your laptop has an AI key. Make it do something, on your own NPU.** ([annejan.com/ai-key](https://annejan.com/ai-key/))
+**Your laptop has an AI key? Make it do something, on your own NPU.** ([annejan.com/ai-key](https://annejan.com/ai-key/))
 
 Many new laptops have a Copilot key. On Linux it does nothing. This project gives it four
 jobs, and runs all of them on the AMD Ryzen AI NPU that is already in the laptop. There is no
