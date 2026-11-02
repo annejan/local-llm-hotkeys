@@ -203,6 +203,31 @@ class TranslatePrompt(unittest.TestCase):
         self.assertEqual(sent, [0])
 
 
+class Verbatim(unittest.TestCase):
+    """A translation and what you sent are shown as they are, not as Markdown."""
+    TEXT = ("# not a heading\nline two of the same paragraph\n\n* not a bullet\n1. not a list\n"
+            "    indented, not code\n> not a quote\n| a | b |\n---\n*not italic* and **not bold** \\o/ [x](y)\nend")
+
+    def test_escapes(self):
+        self.assertEqual(ask.verbatim("# a\nb"), "\\# a\\\nb")
+        self.assertEqual(ask.verbatim("a\n\nb", "> "), "> a\\\n> \u00a0\\\n> b")
+
+    @unittest.skipUnless(ask.can_window(), "needs PySide6")
+    def test_qt_shows_the_text_as_it_is(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtGui import QTextDocument
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance() or QApplication([])  # noqa: F841
+        for prefix in ("", "> "):
+            doc = QTextDocument()
+            doc.setMarkdown(ask.verbatim(self.TEXT, prefix),
+                            QTextDocument.MarkdownDialectGitHub | QTextDocument.MarkdownNoHTML)
+            # Qt makes every line a block of its own; an empty line is a block with a no-break space,
+            # and toPlainText() writes no-break spaces as spaces.
+            shown = [b if b.strip() else "" for b in doc.toPlainText().split("\n")]
+            self.assertEqual(shown, self.TEXT.split("\n"), f"prefix {prefix!r}")
+
+
 class Resume(unittest.TestCase):
     def test_saved_text_is_printed_plain(self):
         """A resumed chat holds copied text (uktr, eli12): no escape codes to the terminal."""

@@ -355,6 +355,24 @@ def terminal(chat=None):
 
 
 QUOTE_CHARS = 2000  # a longer question (a whole letter) is shown cut; the model gets all of it
+VERBATIM = {"uktr"}  # chats whose first answer is a text to show as it is (a translation), not Markdown
+_MARKUP = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~=])")
+
+
+def verbatim(text, prefix=""):
+    """Markdown that shows text exactly as it is: every line stays a line, no character is read
+    as markup (#, *, -, 1. ...), and an indent stays an indent instead of becoming code. For what
+    you sent, and for a translation: there, merged lines and lost characters change the text."""
+    lines = text.split("\n")
+    out = []
+    for i, line in enumerate(lines):
+        body = line.lstrip(" \t")
+        indent = "\u00a0" * len(line[:len(line) - len(body)].expandtabs(4))
+        if not body:
+            indent = "\u00a0"  # an empty line stays an empty line (Qt shows no paragraph gap)
+        hard_break = "\\" if i + 1 < len(lines) else ""  # every line ends a line
+        out.append(prefix + indent + _MARKUP.sub(r"\\\1", body) + hard_break)
+    return "\n".join(out)
 
 
 def window(first=None, chat=None, title=None):
@@ -556,21 +574,25 @@ def window(first=None, chat=None, title=None):
             bar = self.view.verticalScrollBar()
             at_end, pos = bar.value() >= bar.maximum() - 8, bar.value()
             turns = list(self.chat.turns)
-            if self.busy and (not turns or turns[-1]["role"] == "user"):
-                turns.append({"role": "assistant", "content": self.chat.shown(self.answer) + " ▍"})
-            parts = []
+            live = self.busy and (not turns or turns[-1]["role"] == "user")
+            if live:
+                turns.append({"role": "assistant", "content": self.chat.shown(self.answer)})
+            parts, answers = [], 0
             self.view.images.clear()
             for t in turns:
                 if t["role"] == "user":
                     text = text_of(t["content"])
                     if len(text) > QUOTE_CHARS:
                         text = f"{text[:QUOTE_CHARS]}… ({len(text) - QUOTE_CHARS} more characters)"
-                    quoted = "\n".join("> " + line for line in text.splitlines())
                     shots = "".join(f"\n\n![screenshot]({self.view.add_image(url)})"
                                     for url in images_of(t["content"]))
-                    parts.append(f"**You**\n\n{quoted}{shots}")
+                    parts.append(f"**You**\n\n{verbatim(text, '> ')}{shots}")
                 else:
-                    parts.append(t["content"])
+                    answers += 1
+                    as_is = answers == 1 and self.chat.kind in VERBATIM  # a translation
+                    parts.append(verbatim(t["content"]) if as_is else t["content"])
+            if live:
+                parts[-1] += " ▍"
             if self.error:
                 parts.append(f"*{self.error}*")
             if not parts:
