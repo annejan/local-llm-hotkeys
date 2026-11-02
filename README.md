@@ -132,6 +132,10 @@ Example (a long email from a facility team about a new booking system and locker
 
 For an email in Thunderbird: select the text, press Ctrl+C, then Meta+Shift+E.
 
+The model reads all of the text, also parts that you do not see, such as white text in an
+email. A text that is written to trick the model can make the explanation wrong, for example
+"no action needed". For a letter that matters, read the parts about money and dates yourself.
+
 ## fixtext: fix spelling and grammar
 
 Copy a text, press Meta+Shift+F, and paste. `fixtext` fixes spelling, grammar, punctuation
@@ -196,6 +200,10 @@ rectangle around it. Press Esc to cancel.
 `qwen3.5:9b` reads images, so this is the same model as the chat: about 8 s for the first
 answer on the NPU. The screenshot is scaled to 1280 pixels and saved with the chat. Set
 `ASK_SCREEN_PROMPT` to change the first question. The answer is in your language.
+
+A web page in the screenshot can tell the model to write a link that sends your chat to
+someone else. So a link in an answer opens only after the window shows you the full address
+and you click Yes.
 
 ### Saved chats
 
