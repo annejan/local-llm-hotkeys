@@ -33,14 +33,17 @@ FILE_MODEL = conf.get("UKTR_FILE_MODEL") or MODEL
 SUFFIX, TO = llm.parse_language(conf["UKTR_TO"]) if conf.get("UKTR_TO") else llm.language()
 # SUFFIX names the output file: FILE.nl.md for Dutch, FILE.en.md for English, ...
 
-# The instruction goes in the user message, with the language code, not in a system prompt:
-# with a system prompt translategemma translated Ukrainian news into Portuguese, and a
-# Ukrainian sentence into Russian, when Dutch was asked (16 texts into Dutch and English: 14
-# right with a system prompt, 16 with this). Temperature 0: at a higher temperature it also
-# echoes a longer text untranslated now and then.
-PROMPT = ("Translate the following text into {to} ({code}). Produce only the {to} translation, "
-          "without any additional explanations or commentary. Keep paragraph breaks and markdown."
-          "\n\n\n{text}")
+# TranslateGemma's own prompt (from its model card), without the source language, which uktr
+# does not know. In the user message: with a system prompt, translategemma translated Ukrainian
+# news into Portuguese and a Ukrainian sentence into Russian when Dutch was asked. A shorter
+# user-message instruction ("Translate the following text into Dutch (nl).") fixed that, but
+# returned Ukrainian news of 1284 characters and more untranslated; this prompt translated it at
+# every length, and 16 of 16 texts in 8 languages into Dutch and English. Temperature 0: at a
+# higher temperature translategemma echoes a longer text untranslated now and then.
+PROMPT = ("You are a professional translator to {to} ({code}). Your goal is to accurately convey "
+          "the meaning and nuances of the original text while adhering to {to} grammar, vocabulary, "
+          "and cultural sensitivities.\nProduce only the {to} translation, without any additional "
+          "explanations or commentary. Please translate the following text into {to}:\n\n\n{text}")
 
 
 def messages(text, model, to):

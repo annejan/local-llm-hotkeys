@@ -181,9 +181,10 @@ class TranslatePrompt(unittest.TestCase):
     def test_messages(self):
         request = uktr.messages("Привіт", "translategemma:4b", "Dutch")
         self.assertEqual([m["role"] for m in request], ["user"])
-        self.assertTrue(request[0]["content"].startswith("Translate the following text into Dutch (nl)."))
+        self.assertTrue(request[0]["content"].startswith("You are a professional translator to Dutch (nl)."))
+        self.assertIn("Please translate the following text into Dutch:", request[0]["content"])
         self.assertTrue(request[0]["content"].endswith("\n\n\nПривіт"))
-        self.assertIn("into German (de)", uktr.messages("x", "qwen3.5:9b", "de")[0]["content"])
+        self.assertIn("translator to German (de)", uktr.messages("x", "qwen3.5:9b", "de")[0]["content"])
 
     def test_hy_mt_keeps_its_prompt(self):
         request = uktr.messages("Привіт", "hy-mt2-flash:1.8b", "nl")
