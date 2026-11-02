@@ -243,11 +243,16 @@ def rms(pcm):
 
 # --- files ---
 
-def run(cmd, what):
+def run(cmd, what, timeout=600):
+    """The output of a helper such as pdftotext or pandoc. A crafted document can keep a
+    helper busy forever; from the Dolphin menu nobody could cancel that, so it is stopped."""
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
+        return subprocess.run(cmd, capture_output=True, check=True, timeout=timeout,
+                              encoding="utf-8", errors="replace").stdout
     except FileNotFoundError:
         raise Error(f"{cmd[0]} is not installed (needed for {what})") from None
+    except subprocess.TimeoutExpired:
+        raise Error(f"{cmd[0]} took more than {timeout:g} s and was stopped") from None
     except subprocess.CalledProcessError as e:
         raise Error(f"{cmd[0]} failed: {e.stderr.strip()[:200]}") from None
 

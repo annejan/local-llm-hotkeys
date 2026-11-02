@@ -150,6 +150,22 @@ class Output(unittest.TestCase):
                 self.assertEqual(f.read(), "keep")
 
 
+class Run(unittest.TestCase):
+    def test_timeout(self):
+        with self.assertRaises(llm.Error) as e:
+            llm.run([sys.executable, "-c", "import time; time.sleep(5)"], "x", timeout=0.3)
+        self.assertIn("stopped", str(e.exception))
+
+    def test_utf8_with_replacement(self):
+        out = llm.run([sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'a\\xffb')"], "x")
+        self.assertEqual(out, "a\ufffdb")
+
+    def test_not_installed(self):
+        with self.assertRaises(llm.Error) as e:
+            llm.run(["no-such-helper-xyz"], "PDF files")
+        self.assertIn("not installed", str(e.exception))
+
+
 class Dictate(unittest.TestCase):
     def test_stop_signal_is_caught(self):
         """After catch_stop(), the hotkey's SIGUSR1 ends the recording, not the process."""
