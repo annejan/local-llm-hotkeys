@@ -265,7 +265,7 @@ def terminal(chat=None):
 def window(first=None):
     try:
         from PySide6.QtCore import QObject, Qt, QTimer, Signal
-        from PySide6.QtGui import QImage, QKeySequence, QShortcut, QTextDocument
+        from PySide6.QtGui import QDesktopServices, QImage, QKeySequence, QShortcut, QTextDocument
         from PySide6.QtWidgets import (
             QApplication,
             QHBoxLayout,
@@ -290,17 +290,36 @@ def window(first=None):
         piece = Signal(str)
         done = Signal(str)  # "" when complete, "stopped", or an error text
 
+    def confirm(parent, text):
+        """Yes or No. Plain text: a chat title or a link must not show as rich text."""
+        box = QMessageBox(QMessageBox.Question, "ask", text, QMessageBox.Yes | QMessageBox.No, parent)
+        box.setTextFormat(Qt.PlainText)
+        return box.exec() == QMessageBox.Yes
+
     class View(QTextBrowser):
-        """Shows screenshots in the chat as thumbnails: markdown ![](shot:N) -> self.images."""
+        """Shows screenshots in the chat as thumbnails: markdown ![](shot:N) -> self.images.
+
+        An answer can come from text that someone else wrote (a web page in a screenshot), so
+        a link in it can carry your chat to their server: a link opens only after you saw the
+        whole address and said yes. Raw HTML is not rendered (it hides where a link goes), and
+        no image is loaded except the screenshots."""
 
         def __init__(self):
-            super().__init__(openExternalLinks=True)
+            super().__init__(openLinks=False)
+            self.anchorClicked.connect(self.open_link)
             self.images = {}
 
         def loadResource(self, kind, url):
-            if kind == QTextDocument.ImageResource and url.toString() in self.images:
-                return self.images[url.toString()]
+            if kind == QTextDocument.ImageResource:
+                return self.images.get(url.toString())
             return super().loadResource(kind, url)
+
+        def show_markdown(self, text):
+            self.document().setMarkdown(text, QTextDocument.MarkdownDialectGitHub | QTextDocument.MarkdownNoHTML)
+
+        def open_link(self, url):
+            if url.scheme() in ("http", "https") and confirm(self, f"Open this link?\n\n{url.toString()}"):
+                QDesktopServices.openUrl(url)
 
         def add_image(self, data_url):
             name = f"shot:{len(self.images)}"
@@ -420,8 +439,7 @@ def window(first=None):
             if not item or self.busy:
                 return
             path = item.data(Qt.UserRole)
-            if QMessageBox.question(self, "ask", f"Delete this chat?\n\n{item.toolTip()}") \
-                    != QMessageBox.Yes:
+            if not confirm(self, f"Delete this chat?\n\n{item.toolTip()}"):
                 return
             with contextlib.suppress(OSError):
                 os.remove(path)
@@ -455,7 +473,7 @@ def window(first=None):
                 parts.append(f"*Chat with {MODEL} on the local server. "
                              + ("Chats are saved; open an old one on the left.*" if SAVE else
                                 "The conversation is kept until you press New chat.*"))
-            self.view.setMarkdown("\n\n---\n\n".join(parts))
+            self.view.show_markdown("\n\n---\n\n".join(parts))
             bar.setValue(bar.maximum() if follow or at_end else pos)
 
         def send(self, question=None):
