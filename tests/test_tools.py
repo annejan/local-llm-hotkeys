@@ -151,6 +151,15 @@ class Output(unittest.TestCase):
 
 
 class Dictate(unittest.TestCase):
+    def test_stop_signal_is_caught(self):
+        """After catch_stop(), the hotkey's SIGUSR1 ends the recording, not the process."""
+        import signal
+        dictate.STOP.clear()
+        dictate.catch_stop()
+        os.kill(os.getpid(), signal.SIGUSR1)
+        self.assertTrue(dictate.STOP)
+        dictate.STOP.clear()
+
     def test_one_line(self):
         real = llm.transcribe
         llm.transcribe = lambda audio, lang: "ls\nrm -rf x\t now"
