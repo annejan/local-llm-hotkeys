@@ -33,6 +33,7 @@ UKTR_LISTEN_MODEL=hy-mt2-flash:1.8b
 #ELI12_MODEL=qwen3.5:9b
 #ELI12_LANG=nl   # a code or name, or both (yours, then English); default UKTR_LANGUAGE
 #ELI12_SENTENCES=5   # longest explanation, in sentences
+#ELI12_WINDOW=0   # a plain text box instead of the chat window (no follow-up questions)
 
 # fixtext and ask: chat models
 #FIX_MODEL=qwen3.5:9b
