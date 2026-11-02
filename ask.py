@@ -84,11 +84,17 @@ def system():
 
 class Chat:
     """A conversation: the messages so far, and the request for the next answer.
-    With save=True it is written to SAVE_DIR after every answer."""
+    With save=True it is written to SAVE_DIR after every answer.
 
-    def __init__(self, save=False, path=None, turns=None):
+    Another tool can start a chat with its own first answer (eli12 explains a text, then you
+    ask about it): kind names the tool, model is its model, first = (system prompt, clean) is
+    used for the first answer only (clean(answer) is what is shown and kept), and follow_up is
+    added to the rules for the answers after it."""
+
+    def __init__(self, save=False, path=None, turns=None, model=None, kind="", first=None, follow_up=""):
         self.save, self.path = save and SAVE, path
         self.turns = turns or []  # {"role": "user" | "assistant", "content": ...}
+        self.model, self.kind, self.first, self.follow_up = model or MODEL, kind, first, follow_up
 
     @classmethod
     def load(cls, path):
@@ -99,16 +105,33 @@ class Chat:
         turns = data.get("turns") if isinstance(data, dict) else None
         if not isinstance(turns, list) or not all(valid_turn(t) for t in turns):
             raise ValueError(f"{path} is not a saved chat")
-        return cls(save=True, path=path, turns=turns)
+        kind = data.get("kind") if data.get("kind") in KINDS else ""
+        model, follow_up = KINDS[kind]() if kind else (MODEL, "")
+        return cls(save=True, path=path, turns=turns, model=model, kind=kind, follow_up=follow_up)
 
     @property
     def title(self):
         first = next((t["content"] for t in self.turns if t["role"] == "user"), "")
-        if images_of(first):
-            # All screenshot chats start with the same question; the answer says what it was.
+        if images_of(first) or self.kind:
+            # Screenshot chats start with the same question, and an explained text starts with
+            # "Dear ..."; the answer says what it was about.
             answer = next((t["content"] for t in self.turns if t["role"] == "assistant"), "")
-            return "📷 " + title_of(re.sub(r"[*#`>_]", "", answer) or "screenshot")
+            icon = "💡 " if self.kind == "eli12" else "📷 "
+            return icon + title_of(re.sub(r"[*#`>_]", "", answer) or "screenshot")
         return title_of(first)
+
+    def first_answer(self):
+        """True while the answer that is asked or written now is the first one."""
+        return sum(t["role"] == "user" for t in self.turns) <= 1
+
+    def shown(self, answer):
+        """The answer as it is shown and kept: the first one goes through first's clean, also
+        while it streams in (a half label such as "[mess" is not shown)."""
+        if not (self.first and self.first_answer()):
+            return answer
+        if answer.lstrip().startswith("[") and "]" not in answer:
+            return ""
+        return self.first[1](answer)
 
     def write(self):
         if not self.save or not self.turns:
@@ -125,8 +148,8 @@ class Chat:
             self.path = path
         tmp = self.path + ".tmp"
         with open(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8") as f:
-            json.dump({"model": MODEL, "title": self.title, "turns": self.turns}, f,
-                      ensure_ascii=False, indent=1)
+            json.dump({"model": self.model, "kind": self.kind, "title": self.title, "turns": self.turns},
+                      f, ensure_ascii=False, indent=1)
         os.replace(tmp, self.path)  # a crash never leaves half a file
 
     def messages(self):
@@ -137,7 +160,9 @@ class Chat:
             if keep and size > HISTORY_CHARS:
                 break
             keep.insert(0, turn)
-        return [{"role": "system", "content": RULES.format(system=system(), today=today)}, *keep]
+        own = self.first and self.first_answer()  # the first answer of a chat from another tool
+        rules = self.first[0] if own else RULES.format(system=system(), today=today) + self.follow_up
+        return [{"role": "system", "content": rules}, *keep]
 
     def ask(self, question, cancel=None):
         """Yield the answer in pieces. The answer goes into the history when the stream ends,
@@ -146,12 +171,21 @@ class Chat:
         self.turns.append({"role": "user", "content": question})
         answer = ""
         try:
-            for piece in llm.chat_stream(self.messages(), MODEL, cancel=cancel):
+            for piece in llm.chat_stream(self.messages(), self.model, cancel=cancel):
                 answer += piece
                 yield piece
         finally:
-            self.turns.append({"role": "assistant", "content": answer.strip() or "(no answer)"})
+            answer = self.shown(answer).strip()
+            self.turns.append({"role": "assistant", "content": answer or "(no answer)"})
             self.write()
+
+
+def _eli12():
+    import eli12
+    return eli12.MODEL, eli12.FOLLOW_UP
+
+
+KINDS = {"eli12": _eli12}  # a chat started by another tool: kind -> (its model, its follow_up)
 
 
 def valid_turn(turn):
@@ -284,7 +318,12 @@ def terminal(chat=None):
         print()
 
 
-def window(first=None):
+QUOTE_CHARS = 2000  # a longer question (a whole letter) is shown cut; the model gets all of it
+
+
+def window(first=None, chat=None, title=None):
+    """The chat window. first: a question to send at once. chat: a Chat to start with (from
+    another tool). title: the window title."""
     try:
         from PySide6.QtCore import QByteArray, QObject, Qt, QTimer, Signal
         from PySide6.QtGui import QDesktopServices, QImage, QKeySequence, QShortcut, QTextDocument
@@ -365,11 +404,11 @@ def window(first=None):
                 super().keyPressEvent(e)
 
     class Window(QWidget):
-        def __init__(self, first=None):
+        def __init__(self, first=None, chat=None, title=None):
             super().__init__()
-            self.chat, self.busy, self.stop = Chat(save=True), False, threading.Event()
+            self.chat, self.busy, self.stop = chat or Chat(save=True), False, threading.Event()
             self.answer, self.error, self.render_due = "", "", False
-            self.setWindowTitle(f"ask — {MODEL}")
+            self.setWindowTitle(title or f"ask — {self.chat.model}")
             self.resize(1000, 680)
 
             self.list = QListWidget()
@@ -482,12 +521,15 @@ def window(first=None):
             at_end, pos = bar.value() >= bar.maximum() - 8, bar.value()
             turns = list(self.chat.turns)
             if self.busy and (not turns or turns[-1]["role"] == "user"):
-                turns.append({"role": "assistant", "content": self.answer + " ▍"})
+                turns.append({"role": "assistant", "content": self.chat.shown(self.answer) + " ▍"})
             parts = []
             self.view.images.clear()
             for t in turns:
                 if t["role"] == "user":
-                    quoted = "\n".join("> " + line for line in text_of(t["content"]).splitlines())
+                    text = text_of(t["content"])
+                    if len(text) > QUOTE_CHARS:
+                        text = f"{text[:QUOTE_CHARS]}… ({len(text) - QUOTE_CHARS} more characters)"
+                    quoted = "\n".join("> " + line for line in text.splitlines())
                     shots = "".join(f"\n\n![screenshot]({self.view.add_image(url)})"
                                     for url in images_of(t["content"]))
                     parts.append(f"**You**\n\n{quoted}{shots}")
@@ -496,7 +538,7 @@ def window(first=None):
             if self.error:
                 parts.append(f"*{self.error}*")
             if not parts:
-                parts.append(f"*Chat with {MODEL} on the local server. "
+                parts.append(f"*Chat with {self.chat.model} on the local server. "
                              + ("Chats are saved; open an old one on the left.*" if SAVE else
                                 "The conversation is kept until you press New chat.*"))
             self.view.show_markdown("\n\n---\n\n".join(parts))
@@ -583,7 +625,7 @@ def window(first=None):
     app = QApplication(sys.argv[:1])
     app.setApplicationName("ask")
     app.setDesktopFileName("ask")
-    w = Window(first)
+    w = Window(first, chat, title)
     w.show()
     w.raise_()
     w.activateWindow()
