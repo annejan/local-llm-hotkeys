@@ -12,6 +12,7 @@ from typing import ClassVar
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import ask
+import dictate
 import eli12
 import fixtext
 import llm
@@ -90,10 +91,21 @@ class Stream(unittest.TestCase):
             'data: {"choices":[{"delta":{}}]}', "data: [DONE]",
             'data: {"choices":[{"delta":{"content":"after done"}}]}']), "Hello")
 
+    def test_control_characters_removed(self):
+        # OSC 52 (write the clipboard) and a carriage return; newlines and tabs stay.
+        self.assertEqual(self.stream([
+            'data: {"choices":[{"delta":{"content":"a\\u001b]52;c;eA==\\u0007b"}}]}',
+            'data: {"choices":[{"delta":{"content":"\\u001b"}}]}',
+            'data: {"choices":[{"delta":{"content":"\\r\\n\\tc\\u009b"}}]}']), "a]52;c;eA==b\n\tc")
+
     def test_error_chunk(self):
         with self.assertRaises(llm.Error):
             self.stream(['data: {"error":{"message":"model not found"}}'])
 
+
+class Desktop(unittest.TestCase):
+    def test_plain(self):
+        self.assertEqual(llm.plain("x\x1b[31my\x7f\r\nz\tö"), "x[31my\nz\tö")
 
 class Output(unittest.TestCase):
     def test_writes_and_overwrites(self):
@@ -117,6 +129,16 @@ class Output(unittest.TestCase):
                     uktr.open_output(os.path.join(d, name))
             with open(target) as f:
                 self.assertEqual(f.read(), "keep")
+
+
+class Dictate(unittest.TestCase):
+    def test_one_line(self):
+        real = llm.transcribe
+        llm.transcribe = lambda audio, lang: "ls\nrm -rf x\t now"
+        try:
+            self.assertEqual(dictate.text_of(b"audio", False), "ls rm -rf x now")
+        finally:
+            llm.transcribe = real
 
 
 class Cancel(unittest.TestCase):

@@ -113,9 +113,11 @@ def record(log=print):
 
 
 def text_of(audio, translate):
-    """What was said, translated to TO with translate=True ("" if nothing was said)."""
+    """What was said, translated to TO with translate=True ("" if nothing was said). It is one
+    line: a line break pasted into a terminal is Enter, and runs what came before it."""
     text = llm.transcribe(audio, LANG) if audio else ""
-    return uktr.translate(text, to=TO) if text and translate else text
+    text = uktr.translate(text, to=TO) if text and translate else text
+    return " ".join(text.split())
 
 
 def main(argv):

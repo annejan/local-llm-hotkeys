@@ -7,6 +7,7 @@ import contextlib
 import http.client
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -72,6 +73,17 @@ class Error(Exception):
     """A problem to show to the user as it is, without a traceback."""
 
 
+CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def plain(text):
+    """Text without control characters; newlines and tabs stay. What a model or Whisper writes
+    can come from a document or a web page of someone else. Escape sequences in it make a
+    terminal act (set the title, write the clipboard, hide a link), and an escape or a carriage
+    return in text that is pasted into a terminal can run a command."""
+    return CONTROL.sub("", text)
+
+
 # --- the LLM server (OpenAI-compatible) ---
 
 def _request(body, timeout):
@@ -91,7 +103,7 @@ def chat(messages, model, temperature=0.2, timeout=600):
     with _request(_body(messages, model, temperature, False), timeout) as r:
         data = json.load(r)
     try:
-        return data["choices"][0]["message"]["content"].strip()
+        return plain(data["choices"][0]["message"]["content"]).strip()
     except (KeyError, IndexError, TypeError):
         raise Error(f"unexpected answer from the server: {str(data)[:200]}") from None
 
@@ -155,7 +167,7 @@ def chat_stream(messages, model, temperature=0.5, timeout=600, cancel=None):
         chunk = json.loads(data)
         if "error" in chunk:
             raise Error(f"server error: {chunk['error']}")
-        piece = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content")
+        piece = plain((chunk.get("choices") or [{}])[0].get("delta", {}).get("content") or "")
         if piece:
             yield piece
 
@@ -208,7 +220,7 @@ def transcribe(pcm, lang=""):
     req = urllib.request.Request(conf.get("UKTR_ASR_URL", URL).rstrip("/") + "/audio/transcriptions",
                                  body, {"Content-Type": f"multipart/form-data; boundary={boundary}"})
     with urllib.request.urlopen(req, timeout=120) as r:
-        text = json.load(r).get("text", "").strip()
+        text = plain(json.load(r).get("text", "")).strip()
     if not any(c.isalnum() for c in text) or text.lower().strip(" .!…") in HALLUCINATIONS:
         return ""  # "***", "..." or a known hallucination: nothing was said
     return text
@@ -287,7 +299,7 @@ def errors(app, gui):
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as e:
-        msg = str(e) if isinstance(e, Error) else f"{type(e).__name__}: {e}"
+        msg = plain(str(e) if isinstance(e, Error) else f"{type(e).__name__}: {e}")
         if gui:
             notify(f"failed: {msg}", app, 10000)
             sys.exit(1)
