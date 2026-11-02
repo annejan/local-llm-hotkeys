@@ -131,7 +131,7 @@ case ":$PATH:" in *":$BIN:"*) ;; *) warn "$BIN is not in your PATH; add it, or t
 step "Config"
 if [ -f "$CONF" ]; then ok "$CONF exists (not changed)"; else
     mkdir -p "$(dirname "$CONF")" && cp config.example "$CONF" && ok "created $CONF from config.example"; fi
-lang=$(python3 -c "import sys; sys.path.insert(0, '$REPO'); import llm; print(llm.language()[1])")
+lang=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import llm; print(llm.language()[1])' "$REPO")
 ok "your language: $lang (set UKTR_LANGUAGE in the config to change it)"
 
 SYCOCA=$(command -v kbuildsycoca6 || command -v kbuildsycoca5)
@@ -170,8 +170,8 @@ else
     for m in $MODELS; do
         if grep -q -- "- $m ✅" <<<"$listed"; then ok "model $m"; else warn "model $m missing: flm pull $m"; fi
     done
-    url=$(python3 -c "import sys; sys.path.insert(0, '$REPO'); import llm; print(llm.URL)")
-    if python3 -c "import urllib.request; urllib.request.urlopen('$url/models', timeout=3)" 2>/dev/null; then
+    url=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import llm; print(llm.URL)' "$REPO")
+    if python3 -c 'import sys, urllib.request; urllib.request.urlopen(sys.argv[1] + "/models", timeout=3)' "$url" 2>/dev/null; then
         ok "server answers at $url"
     else
         warn "no server at $url: systemctl --user start flm (or ./install.sh --flm)"
