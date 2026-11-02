@@ -201,6 +201,79 @@ class TranslatePrompt(unittest.TestCase):
         self.assertEqual(sent, [0])
 
 
+class UktrWindow(unittest.TestCase):
+    """uktr in the ask window: the translation streams part by part; questions go to ASK_MODEL."""
+
+    def fake(self, sent):
+        def stream(messages, model, temperature=0.5, timeout=600, cancel=None):
+            sent.append((messages, model, temperature))
+            if cancel and cancel.cancelled:
+                return
+            yield "T(" + messages[-1]["content"][-3:] + ")"
+        return stream
+
+    def test_stream_in_parts_and_cancel(self):
+        sent, real = [], llm.chat_stream
+        llm.chat_stream = self.fake(sent)
+        text = "\n\n".join(["a" * 1000 + "AAA", "b" * 1000 + "BBB", "c" * 1000 + "CCC"])
+        try:
+            self.assertEqual("".join(uktr.translate_stream(text, model="m")), "T(AAA)\n\nT(BBB)\n\nT(CCC)")
+            self.assertEqual({(model, t) for _, model, t in sent}, {("m", 0)})
+            cancel, out = llm.Cancel(), []
+            for piece in uktr.translate_stream(text, cancel, model="m"):
+                out.append(piece)
+                cancel.cancelled = True  # Stop after the first part
+            self.assertEqual(out, ["T(AAA)"])
+        finally:
+            llm.chat_stream = real
+
+    def chat(self, done):
+        first = ask.First(stream=lambda q, cancel: uktr.translate_stream(q, cancel, model="mt"), done=done.append)
+        return ask.Chat(kind="uktr", first=first, follow_up=uktr.FOLLOW_UP)
+
+    def test_copied_when_complete_and_follow_up_to_ask_model(self):
+        sent, done, real = [], [], llm.chat_stream
+        llm.chat_stream = self.fake(sent)
+        try:
+            chat = self.chat(done)
+            self.assertEqual("".join(chat.ask("Привіт XYZ")), "T(XYZ)")
+            self.assertEqual(done, ["T(XYZ)"])
+            list(chat.ask("Wat betekent dat woord?"))
+            messages, model, _ = sent[-1]
+            self.assertEqual(model, ask.MODEL)  # a translation model cannot answer questions
+            self.assertTrue(messages[0]["content"].endswith(uktr.FOLLOW_UP))
+            self.assertEqual(chat.title, "🌐 T(XYZ)")
+        finally:
+            llm.chat_stream = real
+
+    def test_not_copied_when_stopped(self):
+        sent, done, real = [], [], llm.chat_stream
+        llm.chat_stream = self.fake(sent)
+        try:
+            chat, cancel = self.chat(done), llm.Cancel()
+            answer = chat.ask("Привіт XYZ", cancel)
+            next(answer)
+            cancel.cancel()
+            answer.close()  # what the window does on Stop
+            self.assertEqual(done, [])
+            self.assertEqual(chat.turns[-1]["content"], "T(XYZ)")  # kept in the history
+        finally:
+            llm.chat_stream = real
+
+    def test_reload_keeps_kind(self):
+        with tempfile.TemporaryDirectory() as d:
+            real = ask.SAVE_DIR, ask.SAVE
+            ask.SAVE_DIR, ask.SAVE = d, True
+            try:
+                chat = ask.Chat(save=True, kind="uktr", turns=[{"role": "user", "content": "Привіт"},
+                                                               {"role": "assistant", "content": "Hallo"}])
+                chat.write()
+                loaded = ask.Chat.load(chat.path)
+                self.assertEqual((loaded.kind, loaded.model, loaded.follow_up), ("uktr", ask.MODEL, uktr.FOLLOW_UP))
+            finally:
+                ask.SAVE_DIR, ask.SAVE = real
+
+
 class ModelPerUse(unittest.TestCase):
     def test_file_model(self):
         used = []
@@ -233,7 +306,8 @@ class Eli12Chat(unittest.TestCase):
     """eli12 in the ask window: its rules and clean() for the first answer, ask's after that."""
 
     def chat(self):
-        return ask.Chat(model="m-eli12", kind="eli12", first=("ELI12 RULES", eli12.clean), follow_up=" FOLLOW")
+        return ask.Chat(model="m-eli12", kind="eli12", first=ask.First(rules="ELI12 RULES", clean=eli12.clean),
+                        follow_up=" FOLLOW")
 
     def stream(self, chat, question, pieces):
         real, sent = llm.chat_stream, []
@@ -264,7 +338,7 @@ class Eli12Chat(unittest.TestCase):
             real = ask.SAVE_DIR, ask.SAVE
             ask.SAVE_DIR, ask.SAVE = d, True
             try:
-                chat = ask.Chat(save=True, model="m", kind="eli12", first=("R", eli12.clean),
+                chat = ask.Chat(save=True, model="m", kind="eli12", first=ask.First(rules="R", clean=eli12.clean),
                                 turns=[{"role": "user", "content": "Geachte heer Brouwer,"},
                                        {"role": "assistant", "content": "De **gemeente** wil geld."}])
                 chat.write()

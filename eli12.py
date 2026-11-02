@@ -15,7 +15,6 @@ Uses the same backend and config file as uktr (~/.config/uktr/config, UKTR_URL).
   ELI12_WINDOW      default 1: clip and --popup open the ask window (the explanation streams
                     in, and you can ask about the text); 0 = a plain text box (kdialog)
 """
-import importlib.util
 import os
 import re
 import sys
@@ -81,7 +80,8 @@ def explain(text, lang):
 
 def window_ok(langs):
     """The ask window can show this: one language, PySide6 there, not switched off."""
-    return WINDOW and len(langs) == 1 and importlib.util.find_spec("PySide6") is not None
+    import ask
+    return WINDOW and len(langs) == 1 and ask.can_window()
 
 
 def explain_window(text, title, lang):
@@ -89,7 +89,8 @@ def explain_window(text, title, lang):
     the text. The first answer follows eli12's rules; follow-up questions are normal ask
     questions, with the text and the explanation as context."""
     import ask
-    chat = ask.Chat(save=True, model=MODEL, kind="eli12", first=(rules(lang), clean), follow_up=FOLLOW_UP)
+    chat = ask.Chat(save=True, model=MODEL, kind="eli12", first=ask.First(rules=rules(lang), clean=clean),
+                    follow_up=FOLLOW_UP)
     ask.window(first=text[:MAX_CHARS], chat=chat, title=f"eli12: {title}")
 
 

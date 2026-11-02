@@ -28,6 +28,7 @@ import contextlib
 import datetime
 import functools
 import html
+import importlib.util
 import json
 import os
 import re
@@ -82,14 +83,30 @@ def system():
     return ", ".join(parts)
 
 
+def can_window():
+    """PySide6 is there, so the chat window can open."""
+    return importlib.util.find_spec("PySide6") is not None
+
+
+class First:
+    """How a chat from another tool makes its first answer; every part is optional.
+    rules: the system prompt. clean(answer): what is shown and kept, also while it streams in.
+    stream(question, cancel): yields the answer in pieces, instead of one request to the model
+    (uktr translates a long text part by part, with its own model). done(answer): called when
+    the answer is complete (not when it was stopped or failed)."""
+
+    def __init__(self, rules=None, clean=None, stream=None, done=None):
+        self.rules, self.clean, self.stream, self.done = rules, clean, stream, done
+
+
 class Chat:
     """A conversation: the messages so far, and the request for the next answer.
     With save=True it is written to SAVE_DIR after every answer.
 
-    Another tool can start a chat with its own first answer (eli12 explains a text, then you
-    ask about it): kind names the tool, model is its model, first = (system prompt, clean) is
-    used for the first answer only (clean(answer) is what is shown and kept), and follow_up is
-    added to the rules for the answers after it."""
+    Another tool can start a chat with its own first answer (eli12 explains a text, uktr
+    translates it, then you ask about it): kind names the tool, model is the model for the
+    answers, first (a First) makes the first answer, and follow_up is added to the rules for
+    the answers after it."""
 
     def __init__(self, save=False, path=None, turns=None, model=None, kind="", first=None, follow_up=""):
         self.save, self.path = save and SAVE, path
@@ -116,7 +133,7 @@ class Chat:
             # Screenshot chats start with the same question, and an explained text starts with
             # "Dear ..."; the answer says what it was about.
             answer = next((t["content"] for t in self.turns if t["role"] == "assistant"), "")
-            icon = "💡 " if self.kind == "eli12" else "📷 "
+            icon = ICONS.get(self.kind, "📷 ")
             return icon + title_of(re.sub(r"[*#`>_]", "", answer) or "screenshot")
         return title_of(first)
 
@@ -127,11 +144,11 @@ class Chat:
     def shown(self, answer):
         """The answer as it is shown and kept: the first one goes through first's clean, also
         while it streams in (a half label such as "[mess" is not shown)."""
-        if not (self.first and self.first_answer()):
+        if not (self.first and self.first.clean and self.first_answer()):
             return answer
         if answer.lstrip().startswith("[") and "]" not in answer:
             return ""
-        return self.first[1](answer)
+        return self.first.clean(answer)
 
     def write(self):
         if not self.save or not self.turns:
@@ -160,8 +177,8 @@ class Chat:
             if keep and size > HISTORY_CHARS:
                 break
             keep.insert(0, turn)
-        own = self.first and self.first_answer()  # the first answer of a chat from another tool
-        rules = self.first[0] if own else RULES.format(system=system(), today=today) + self.follow_up
+        own = self.first and self.first.rules and self.first_answer()  # another tool's first answer
+        rules = self.first.rules if own else RULES.format(system=system(), today=today) + self.follow_up
         return [{"role": "system", "content": rules}, *keep]
 
     def ask(self, question, cancel=None):
@@ -169,15 +186,23 @@ class Chat:
         also when it is stopped or fails, so a follow-up question still has the context.
         cancel: an llm.Cancel, to stop the answer from another thread."""
         self.turns.append({"role": "user", "content": question})
-        answer = ""
+        first = self.first if self.first and self.first_answer() else None
+        if first and first.stream:
+            pieces = first.stream(question, cancel)
+        else:
+            pieces = llm.chat_stream(self.messages(), self.model, cancel=cancel)
+        answer, complete = "", False
         try:
-            for piece in llm.chat_stream(self.messages(), self.model, cancel=cancel):
+            for piece in pieces:
                 answer += piece
                 yield piece
+            complete = not (cancel and cancel.cancelled)
         finally:
             answer = self.shown(answer).strip()
             self.turns.append({"role": "assistant", "content": answer or "(no answer)"})
             self.write()
+            if complete and first and first.done and answer:
+                first.done(answer)
 
 
 def _eli12():
@@ -185,7 +210,13 @@ def _eli12():
     return eli12.MODEL, eli12.FOLLOW_UP
 
 
-KINDS = {"eli12": _eli12}  # a chat started by another tool: kind -> (its model, its follow_up)
+def _uktr():
+    import uktr
+    return MODEL, uktr.FOLLOW_UP  # translation models cannot chat: questions go to ASK_MODEL
+
+
+KINDS = {"eli12": _eli12, "uktr": _uktr}  # a chat started by another tool: kind -> (model, follow_up)
+ICONS = {"eli12": "💡 ", "uktr": "🌐 "}  # before the title of such a chat; a screenshot gets 📷
 
 
 def valid_turn(turn):
