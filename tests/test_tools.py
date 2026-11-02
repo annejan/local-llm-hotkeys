@@ -1,4 +1,5 @@
 """Tests for the logic that needs no LLM server. Run: python3 -m unittest discover -s tests"""
+import importlib.util
 import io
 import os
 import socket
@@ -199,6 +200,27 @@ class TranslatePrompt(unittest.TestCase):
         finally:
             llm.chat = real
         self.assertEqual(sent, [0])
+
+
+class CanWindow(unittest.TestCase):
+    def test_needs_qtwidgets(self):
+        """Debian splits PySide6: the package can be there without QtWidgets."""
+        real = importlib.util.find_spec
+        importlib.util.find_spec = lambda name, *a: None if name == "PySide6.QtWidgets" else real(name, *a)
+        try:
+            self.assertFalse(ask.can_window())
+        finally:
+            importlib.util.find_spec = real
+
+    def test_no_pyside6(self):
+        real = importlib.util.find_spec
+        def missing(name, *a):
+            raise ModuleNotFoundError(name)
+        importlib.util.find_spec = missing
+        try:
+            self.assertFalse(ask.can_window())
+        finally:
+            importlib.util.find_spec = real
 
 
 class UktrWindow(unittest.TestCase):

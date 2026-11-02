@@ -84,8 +84,12 @@ def system():
 
 
 def can_window():
-    """PySide6 is there, so the chat window can open."""
-    return importlib.util.find_spec("PySide6") is not None
+    """The parts of PySide6 that the window needs are there. Debian splits PySide6 into packages
+    (python3-pyside6.qtwidgets ...): without QtWidgets, window() would open Konsole instead."""
+    try:
+        return all(importlib.util.find_spec(f"PySide6.{m}") for m in ("QtCore", "QtGui", "QtWidgets"))
+    except ImportError:  # no PySide6 at all
+        return False
 
 
 class First:
