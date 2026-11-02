@@ -1,4 +1,6 @@
 """Tests for the logic that needs no LLM server. Run: python3 -m unittest discover -s tests"""
+import builtins
+import importlib.util
 import io
 import os
 import socket
@@ -201,6 +203,196 @@ class TranslatePrompt(unittest.TestCase):
         self.assertEqual(sent, [0])
 
 
+class FollowUpContext(unittest.TestCase):
+    """A follow-up question about a long text that another tool started the chat with."""
+
+    def test_first_text_and_answer_are_kept(self):
+        n = ask.HISTORY_CHARS
+        turns = [{"role": "user", "content": "S" * n}, {"role": "assistant", "content": "T" * n},
+                 {"role": "user", "content": "q1"}, {"role": "assistant", "content": "a1"},
+                 {"role": "user", "content": "what does that word mean?"}]
+        msgs = ask.Chat(kind="uktr", turns=turns).messages()
+        self.assertEqual([m["role"] for m in msgs], ["system", "user", "assistant", "user", "assistant", "user"])
+        self.assertTrue(msgs[1]["content"].startswith("S" * 100))  # the source, cut
+        self.assertTrue(msgs[2]["content"].startswith("T" * 100))  # its translation, cut
+        self.assertEqual(msgs[-1]["content"], "what does that word mean?")
+        self.assertLessEqual(sum(len(m["content"]) for m in msgs[1:]), n + 200)
+
+    def test_alternates_when_the_middle_is_dropped(self):
+        n = ask.HISTORY_CHARS
+        turns = [{"role": "user", "content": "S" * 10}, {"role": "assistant", "content": "T" * 10},
+                 {"role": "user", "content": "q1"}, {"role": "assistant", "content": "A" * n},
+                 {"role": "user", "content": "q2"}]
+        roles = [m["role"] for m in ask.Chat(kind="eli12", turns=turns).messages()]
+        self.assertEqual(roles, ["system", "user", "assistant", "user"])  # q2 right after the first answer
+
+    def test_a_normal_chat_keeps_the_newest(self):
+        old = {"role": "user", "content": "x" * ask.HISTORY_CHARS}
+        turns = [old, {"role": "assistant", "content": "a"}, {"role": "user", "content": "newest"}]
+        msgs = ask.Chat(turns=turns).messages()
+        self.assertNotIn(old, msgs)
+
+
+class Verbatim(unittest.TestCase):
+    """A translation and what you sent are shown as they are, not as Markdown."""
+    TEXT = ("# not a heading\nline two of the same paragraph\n\n* not a bullet\n1. not a list\n"
+            "    indented, not code\n> not a quote\n| a | b |\n---\n*not italic* and **not bold** \\o/ [x](y)\nend")
+
+    def test_escapes(self):
+        self.assertEqual(ask.verbatim("# a\nb"), "\\# a\\\nb")
+        self.assertEqual(ask.verbatim("a\n\nb", "> "), "> a\\\n> \u00a0\\\n> b")
+
+    @unittest.skipUnless(ask.can_window(), "needs PySide6")
+    def test_qt_shows_the_text_as_it_is(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtGui import QTextDocument
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance() or QApplication([])  # noqa: F841
+        for prefix in ("", "> "):
+            doc = QTextDocument()
+            doc.setMarkdown(ask.verbatim(self.TEXT, prefix),
+                            QTextDocument.MarkdownDialectGitHub | QTextDocument.MarkdownNoHTML)
+            # Qt makes every line a block of its own; an empty line is a block with a no-break space,
+            # and toPlainText() writes no-break spaces as spaces.
+            shown = [b if b.strip() else "" for b in doc.toPlainText().split("\n")]
+            self.assertEqual(shown, self.TEXT.split("\n"), f"prefix {prefix!r}")
+
+
+class Resume(unittest.TestCase):
+    def test_saved_text_is_printed_plain(self):
+        """A resumed chat holds copied text (uktr, eli12): no escape codes to the terminal."""
+        chat = ask.Chat(turns=[{"role": "user", "content": "a\x1b]52;c;eA==\x07b \u202eevil"},
+                               {"role": "assistant", "content": "c\x1b[2Jd"}])
+        out, real_input, real_stdout = io.StringIO(), builtins.input, sys.stdout
+
+        def eof(prompt=""):
+            raise EOFError  # Ctrl+D at once: only the saved turns are printed
+        builtins.input, sys.stdout = eof, out
+        try:
+            ask.terminal(chat)
+        finally:
+            builtins.input, sys.stdout = real_input, real_stdout
+        self.assertNotIn("\x1b", out.getvalue())
+        self.assertNotIn("\u202e", out.getvalue())
+        self.assertIn("a]52;c;eA==b", out.getvalue())
+
+
+class CanWindow(unittest.TestCase):
+    def test_needs_qtwidgets(self):
+        """Debian splits PySide6: the package can be there without QtWidgets."""
+        real = importlib.util.find_spec
+        importlib.util.find_spec = lambda name, *a: None if name == "PySide6.QtWidgets" else real(name, *a)
+        try:
+            self.assertFalse(ask.can_window())
+        finally:
+            importlib.util.find_spec = real
+
+    def test_no_pyside6(self):
+        real = importlib.util.find_spec
+        def missing(name, *a):
+            raise ModuleNotFoundError(name)
+        importlib.util.find_spec = missing
+        try:
+            self.assertFalse(ask.can_window())
+        finally:
+            importlib.util.find_spec = real
+
+
+class UktrWindow(unittest.TestCase):
+    """uktr in the ask window: the translation streams part by part; questions go to ASK_MODEL."""
+
+    def fake(self, sent):
+        def stream(messages, model, temperature=0.5, timeout=600, cancel=None):
+            sent.append((messages, model, temperature))
+            if cancel and cancel.cancelled:
+                return
+            yield "T(" + messages[-1]["content"][-3:] + ")"
+        return stream
+
+    def test_stream_in_parts_and_cancel(self):
+        sent, real = [], llm.chat_stream
+        llm.chat_stream = self.fake(sent)
+        text = "\n\n".join(["a" * 1000 + "AAA", "b" * 1000 + "BBB", "c" * 1000 + "CCC"])
+        try:
+            self.assertEqual("".join(uktr.translate_stream(text, model="m")), "T(AAA)\n\nT(BBB)\n\nT(CCC)")
+            self.assertEqual({(model, t) for _, model, t in sent}, {("m", 0)})
+            cancel, out = llm.Cancel(), []
+            for piece in uktr.translate_stream(text, cancel, model="m"):
+                out.append(piece)
+                cancel.cancelled = True  # Stop after the first part
+            self.assertEqual(out, ["T(AAA)"])
+        finally:
+            llm.chat_stream = real
+
+    def chat(self, done):
+        first = ask.First(stream=lambda q, cancel: uktr.translate_stream(q, cancel, model="mt"), done=done.append)
+        return ask.Chat(kind="uktr", first=first, follow_up=uktr.FOLLOW_UP)
+
+    def test_copied_when_complete_and_follow_up_to_ask_model(self):
+        sent, done, real = [], [], llm.chat_stream
+        llm.chat_stream = self.fake(sent)
+        try:
+            chat = self.chat(done)
+            self.assertEqual("".join(chat.ask("Привіт XYZ")), "T(XYZ)")
+            self.assertEqual(done, ["T(XYZ)"])
+            list(chat.ask("Wat betekent dat woord?"))
+            messages, model, _ = sent[-1]
+            self.assertEqual(model, ask.MODEL)  # a translation model cannot answer questions
+            self.assertTrue(messages[0]["content"].endswith(uktr.FOLLOW_UP))
+            self.assertEqual(chat.title, "🌐 T(XYZ)")
+        finally:
+            llm.chat_stream = real
+
+    def test_not_copied_when_stopped(self):
+        sent, done, real = [], [], llm.chat_stream
+        llm.chat_stream = self.fake(sent)
+        try:
+            chat, cancel = self.chat(done), llm.Cancel()
+            answer = chat.ask("Привіт XYZ", cancel)
+            next(answer)
+            cancel.cancel()
+            answer.close()  # the reader leaves: Ctrl+C, an error, a break
+            self.assertEqual(done, [])
+            self.assertEqual(chat.turns[-1]["content"], "T(XYZ)")  # kept in the history
+        finally:
+            llm.chat_stream = real
+
+    def test_not_copied_when_the_stream_ends_after_stop(self):
+        """The window's usual Stop: cancel() makes the stream end by itself, and the reader
+        reads on to that end; nothing closes the generator. Only the check that the answer was
+        complete keeps a half translation off the clipboard."""
+        def stream(messages, model, temperature=0.5, timeout=600, cancel=None):
+            yield "first "
+            if cancel and cancel.cancelled:
+                return  # like llm.chat_stream once cancel() ended the connection
+            yield "second"
+        done, real = [], llm.chat_stream
+        llm.chat_stream = stream
+        try:
+            chat, cancel = self.chat(done), llm.Cancel()
+            answer = chat.ask("Привіт XYZ", cancel)
+            self.assertEqual(next(answer), "first ")
+            cancel.cancel()
+            self.assertEqual(list(answer), [])  # read on to the end, as Window.work does
+            self.assertEqual(done, [])
+            self.assertEqual(chat.turns[-1]["content"], "first")  # kept in the history
+        finally:
+            llm.chat_stream = real
+
+    def test_reload_keeps_kind(self):
+        with tempfile.TemporaryDirectory() as d:
+            real = ask.SAVE_DIR, ask.SAVE
+            ask.SAVE_DIR, ask.SAVE = d, True
+            try:
+                chat = ask.Chat(save=True, kind="uktr", turns=[{"role": "user", "content": "Привіт"},
+                                                               {"role": "assistant", "content": "Hallo"}])
+                chat.write()
+                loaded = ask.Chat.load(chat.path)
+                self.assertEqual((loaded.kind, loaded.model, loaded.follow_up), ("uktr", ask.MODEL, uktr.FOLLOW_UP))
+            finally:
+                ask.SAVE_DIR, ask.SAVE = real
+
+
 class ModelPerUse(unittest.TestCase):
     def test_file_model(self):
         used = []
@@ -233,7 +425,8 @@ class Eli12Chat(unittest.TestCase):
     """eli12 in the ask window: its rules and clean() for the first answer, ask's after that."""
 
     def chat(self):
-        return ask.Chat(model="m-eli12", kind="eli12", first=("ELI12 RULES", eli12.clean), follow_up=" FOLLOW")
+        return ask.Chat(model="m-eli12", kind="eli12", first=ask.First(rules="ELI12 RULES", clean=eli12.clean),
+                        follow_up=" FOLLOW")
 
     def stream(self, chat, question, pieces):
         real, sent = llm.chat_stream, []
@@ -264,7 +457,7 @@ class Eli12Chat(unittest.TestCase):
             real = ask.SAVE_DIR, ask.SAVE
             ask.SAVE_DIR, ask.SAVE = d, True
             try:
-                chat = ask.Chat(save=True, model="m", kind="eli12", first=("R", eli12.clean),
+                chat = ask.Chat(save=True, model="m", kind="eli12", first=ask.First(rules="R", clean=eli12.clean),
                                 turns=[{"role": "user", "content": "Geachte heer Brouwer,"},
                                        {"role": "assistant", "content": "De **gemeente** wil geld."}])
                 chat.write()

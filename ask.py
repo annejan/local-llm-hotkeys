@@ -28,6 +28,7 @@ import contextlib
 import datetime
 import functools
 import html
+import importlib.util
 import json
 import os
 import re
@@ -82,14 +83,34 @@ def system():
     return ", ".join(parts)
 
 
+def can_window():
+    """The parts of PySide6 that the window needs are there. Debian splits PySide6 into packages
+    (python3-pyside6.qtwidgets ...): without QtWidgets, window() would open Konsole instead."""
+    try:
+        return all(importlib.util.find_spec(f"PySide6.{m}") for m in ("QtCore", "QtGui", "QtWidgets"))
+    except ImportError:  # no PySide6 at all
+        return False
+
+
+class First:
+    """How a chat from another tool makes its first answer; every part is optional.
+    rules: the system prompt. clean(answer): what is shown and kept, also while it streams in.
+    stream(question, cancel): yields the answer in pieces, instead of one request to the model
+    (uktr translates a long text part by part, with its own model). done(answer): called when
+    the answer is complete (not when it was stopped or failed)."""
+
+    def __init__(self, rules=None, clean=None, stream=None, done=None):
+        self.rules, self.clean, self.stream, self.done = rules, clean, stream, done
+
+
 class Chat:
     """A conversation: the messages so far, and the request for the next answer.
     With save=True it is written to SAVE_DIR after every answer.
 
-    Another tool can start a chat with its own first answer (eli12 explains a text, then you
-    ask about it): kind names the tool, model is its model, first = (system prompt, clean) is
-    used for the first answer only (clean(answer) is what is shown and kept), and follow_up is
-    added to the rules for the answers after it."""
+    Another tool can start a chat with its own first answer (eli12 explains a text, uktr
+    translates it, then you ask about it): kind names the tool, model is the model for the
+    answers, first (a First) makes the first answer, and follow_up is added to the rules for
+    the answers after it."""
 
     def __init__(self, save=False, path=None, turns=None, model=None, kind="", first=None, follow_up=""):
         self.save, self.path = save and SAVE, path
@@ -116,7 +137,7 @@ class Chat:
             # Screenshot chats start with the same question, and an explained text starts with
             # "Dear ..."; the answer says what it was about.
             answer = next((t["content"] for t in self.turns if t["role"] == "assistant"), "")
-            icon = "💡 " if self.kind == "eli12" else "📷 "
+            icon = ICONS.get(self.kind, "📷 ")
             return icon + title_of(re.sub(r"[*#`>_]", "", answer) or "screenshot")
         return title_of(first)
 
@@ -127,11 +148,11 @@ class Chat:
     def shown(self, answer):
         """The answer as it is shown and kept: the first one goes through first's clean, also
         while it streams in (a half label such as "[mess" is not shown)."""
-        if not (self.first and self.first_answer()):
+        if not (self.first and self.first.clean and self.first_answer()):
             return answer
         if answer.lstrip().startswith("[") and "]" not in answer:
             return ""
-        return self.first[1](answer)
+        return self.first.clean(answer)
 
     def write(self):
         if not self.save or not self.turns:
@@ -153,15 +174,26 @@ class Chat:
         os.replace(tmp, self.path)  # a crash never leaves half a file
 
     def messages(self):
+        """The request for the next answer: the rules, then as many of the newest turns as fit in
+        HISTORY_CHARS. A chat from another tool (eli12, uktr) is about its first text and answer:
+        those two are always kept, each cut to a third of HISTORY_CHARS if it is longer, so that a
+        follow-up question still has the text that it is about."""
         today = datetime.date.today().strftime("%A %d %B %Y")
-        keep, size = [], 0
-        for turn in reversed(self.turns):
+        turns, head, size = self.turns, [], 0
+        if self.kind and len(turns) > 2:
+            head = [cut(t, HISTORY_CHARS // 3) for t in turns[:2]]
+            turns, size = turns[2:], sum(len(text_of(t["content"])) for t in head)
+        keep = []
+        for turn in reversed(turns):
             size += len(text_of(turn["content"])) + IMAGE_CHARS * len(images_of(turn["content"]))
             if keep and size > HISTORY_CHARS:
                 break
             keep.insert(0, turn)
-        own = self.first and self.first_answer()  # the first answer of a chat from another tool
-        rules = self.first[0] if own else RULES.format(system=system(), today=today) + self.follow_up
+        if head and keep[0]["role"] == "assistant":
+            keep.pop(0)  # after the kept first answer comes a question: user and assistant alternate
+        keep = head + keep
+        own = self.first and self.first.rules and self.first_answer()  # another tool's first answer
+        rules = self.first.rules if own else RULES.format(system=system(), today=today) + self.follow_up
         return [{"role": "system", "content": rules}, *keep]
 
     def ask(self, question, cancel=None):
@@ -169,15 +201,23 @@ class Chat:
         also when it is stopped or fails, so a follow-up question still has the context.
         cancel: an llm.Cancel, to stop the answer from another thread."""
         self.turns.append({"role": "user", "content": question})
-        answer = ""
+        first = self.first if self.first and self.first_answer() else None
+        if first and first.stream:
+            pieces = first.stream(question, cancel)
+        else:
+            pieces = llm.chat_stream(self.messages(), self.model, cancel=cancel)
+        answer, complete = "", False
         try:
-            for piece in llm.chat_stream(self.messages(), self.model, cancel=cancel):
+            for piece in pieces:
                 answer += piece
                 yield piece
+            complete = not (cancel and cancel.cancelled)
         finally:
             answer = self.shown(answer).strip()
             self.turns.append({"role": "assistant", "content": answer or "(no answer)"})
             self.write()
+            if complete and first and first.done and answer:
+                first.done(answer)
 
 
 def _eli12():
@@ -185,7 +225,13 @@ def _eli12():
     return eli12.MODEL, eli12.FOLLOW_UP
 
 
-KINDS = {"eli12": _eli12}  # a chat started by another tool: kind -> (its model, its follow_up)
+def _uktr():
+    import uktr
+    return MODEL, uktr.FOLLOW_UP  # translation models cannot chat: questions go to ASK_MODEL
+
+
+KINDS = {"eli12": _eli12, "uktr": _uktr}  # a chat started by another tool: kind -> (model, follow_up)
+ICONS = {"eli12": "💡 ", "uktr": "🌐 "}  # before the title of such a chat; a screenshot gets 📷
 
 
 def valid_turn(turn):
@@ -199,6 +245,14 @@ def valid_turn(turn):
         isinstance(p, dict) and (p.get("type") != "text" or isinstance(p.get("text"), str))
         and (p.get("type") != "image_url" or isinstance((p.get("image_url") or {}).get("url"), str))
         for p in content)
+
+
+def cut(turn, chars):
+    """The turn with a text content cut to about chars characters (a turn with images as it is)."""
+    content = turn["content"]
+    if isinstance(content, str) and len(content) > chars:
+        return {**turn, "content": f"{content[:chars]} … ({len(content) - chars} more characters)"}
+    return turn
 
 
 def text_of(content):
@@ -286,11 +340,12 @@ def terminal(chat=None):
     chat = chat or Chat(save=True)
     print(f"ask {MODEL}: /new starts a new chat, Ctrl+D or /quit quits.", file=sys.stderr)
     for t in chat.turns:  # a resumed chat: show it first
+        # plain(): a saved question can be a copied text (uktr, eli12) with escape codes in it
         if t["role"] == "user":
             shots = " [screenshot]" * len(images_of(t["content"]))
-            print(f"\n> {text_of(t['content'])}{shots}")
+            print(f"\n> {llm.plain(text_of(t['content']))}{shots}")
         else:
-            print(t["content"])
+            print(llm.plain(t["content"]))
     while True:
         try:
             question = input("\n> ").strip()
@@ -319,6 +374,24 @@ def terminal(chat=None):
 
 
 QUOTE_CHARS = 2000  # a longer question (a whole letter) is shown cut; the model gets all of it
+VERBATIM = {"uktr"}  # chats whose first answer is a text to show as it is (a translation), not Markdown
+_MARKUP = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~=])")
+
+
+def verbatim(text, prefix=""):
+    """Markdown that shows text exactly as it is: every line stays a line, no character is read
+    as markup (#, *, -, 1. ...), and an indent stays an indent instead of becoming code. For what
+    you sent, and for a translation: there, merged lines and lost characters change the text."""
+    lines = text.split("\n")
+    out = []
+    for i, line in enumerate(lines):
+        body = line.lstrip(" \t")
+        indent = "\u00a0" * len(line[:len(line) - len(body)].expandtabs(4))
+        if not body:
+            indent = "\u00a0"  # an empty line stays an empty line (Qt shows no paragraph gap)
+        hard_break = "\\" if i + 1 < len(lines) else ""  # every line ends a line
+        out.append(prefix + indent + _MARKUP.sub(r"\\\1", body) + hard_break)
+    return "\n".join(out)
 
 
 def window(first=None, chat=None, title=None):
@@ -520,21 +593,25 @@ def window(first=None, chat=None, title=None):
             bar = self.view.verticalScrollBar()
             at_end, pos = bar.value() >= bar.maximum() - 8, bar.value()
             turns = list(self.chat.turns)
-            if self.busy and (not turns or turns[-1]["role"] == "user"):
-                turns.append({"role": "assistant", "content": self.chat.shown(self.answer) + " ▍"})
-            parts = []
+            live = self.busy and (not turns or turns[-1]["role"] == "user")
+            if live:
+                turns.append({"role": "assistant", "content": self.chat.shown(self.answer)})
+            parts, answers = [], 0
             self.view.images.clear()
             for t in turns:
                 if t["role"] == "user":
                     text = text_of(t["content"])
                     if len(text) > QUOTE_CHARS:
                         text = f"{text[:QUOTE_CHARS]}… ({len(text) - QUOTE_CHARS} more characters)"
-                    quoted = "\n".join("> " + line for line in text.splitlines())
                     shots = "".join(f"\n\n![screenshot]({self.view.add_image(url)})"
                                     for url in images_of(t["content"]))
-                    parts.append(f"**You**\n\n{quoted}{shots}")
+                    parts.append(f"**You**\n\n{verbatim(text, '> ')}{shots}")
                 else:
-                    parts.append(t["content"])
+                    answers += 1
+                    as_is = answers == 1 and self.chat.kind in VERBATIM  # a translation
+                    parts.append(verbatim(t["content"]) if as_is else t["content"])
+            if live:
+                parts[-1] += " ▍"
             if self.error:
                 parts.append(f"*{self.error}*")
             if not parts:

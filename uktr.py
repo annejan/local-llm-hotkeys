@@ -15,6 +15,8 @@ Backend is any OpenAI-compatible server, set in ~/.config/uktr/config or env:
               can wait for a slower, more careful model
   UKTR_TO     target language, default your language (UKTR_LANGUAGE, else the desktop's)
   UKTR_LISTEN_MODEL  translation model for `listen` (default UKTR_MODEL)
+  UKTR_WINDOW default 1: clip and shot open the ask window (the translation streams in, and
+              you can ask about it); 0 = a plain text box (kdialog)
   UKTR_LANG   spoken language for `listen`, default uk ("" = Whisper guesses)
 """
 import errno
@@ -32,6 +34,8 @@ MODEL = conf.get("UKTR_MODEL", "translategemma:4b")
 FILE_MODEL = conf.get("UKTR_FILE_MODEL") or MODEL
 SUFFIX, TO = llm.parse_language(conf["UKTR_TO"]) if conf.get("UKTR_TO") else llm.language()
 # SUFFIX names the output file: FILE.nl.md for Dutch, FILE.en.md for English, ...
+
+WINDOW = conf.get("UKTR_WINDOW", "1") != "0"
 
 # TranslateGemma's own prompt (from its model card), without the source language, which uktr
 # does not know. In the user message: with a system prompt, translategemma translated Ukrainian
@@ -56,10 +60,29 @@ def messages(text, model, to):
     return [{"role": "user", "content": PROMPT.format(to=name, code=code, text=text)}]
 
 
+# Added to ask's rules for questions after a translation in the window. Translation models
+# cannot chat, so those questions go to ASK_MODEL.
+FOLLOW_UP = (f" The first user message is a text, and the first answer is its translation to {TO}. "
+             "Answer questions about the text or the translation briefly, and quote the words that "
+             "you explain.")
+
+
 def translate(text, model=None, to=None):
     """Translate text to `to` (a language name; default TO, your language)."""
     model, to = model or MODEL, to or TO
     return llm.chat(messages(text, model, to), model, temperature=0)
+
+
+def translate_stream(text, cancel=None, model=None, to=None):
+    """The translation in pieces, as the model writes it. Long text goes part by part, like
+    translate_long. cancel: an llm.Cancel; it also stops the parts that have not started."""
+    model, to = model or MODEL, to or TO
+    for i, part in enumerate(llm.chunks(text)):
+        if cancel and cancel.cancelled:
+            return
+        if i:
+            yield "\n\n"
+        yield from llm.chat_stream(messages(part, model, to), model, temperature=0, cancel=cancel)
 
 
 def translate_long(text, out, progress=False, model=None):
@@ -73,9 +96,21 @@ def translate_long(text, out, progress=False, model=None):
         print(file=sys.stderr)
 
 
+def translate_window(text):
+    """The translation in the ask window: it streams in, Esc stops it, and you can ask about
+    it. When it is complete, it is also copied to the clipboard, as from the text box."""
+    import ask
+    first = ask.First(stream=lambda question, cancel: translate_stream(question, cancel), done=llm.copy)
+    chat = ask.Chat(save=True, kind="uktr", first=first, follow_up=FOLLOW_UP)
+    ask.window(first=text, chat=chat, title=f"uktr → {TO}")
+
+
 def translate_popup(text, source):
     if not text.strip():
         return llm.notify(f"nothing to translate ({source} is empty)", "uktr")
+    import ask
+    if WINDOW and ask.can_window():
+        return translate_window(text)
     llm.notify(f"translating {len(text)} chars…", "uktr")
     with tempfile.TemporaryFile("w+", encoding="utf-8") as out:
         translate_long(text, out)

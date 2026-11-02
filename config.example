@@ -22,6 +22,9 @@ UKTR_LISTEN_MODEL=hy-mt2-flash:1.8b
 # uktr: target language, if not your language
 #UKTR_TO=English
 
+# uktr clip and shot: a plain text box instead of the chat window (no follow-up questions)
+#UKTR_WINDOW=0
+
 # uktr shot: tesseract languages
 #UKTR_OCR=ukr+eng
 
