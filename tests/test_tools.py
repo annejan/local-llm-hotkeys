@@ -203,6 +203,36 @@ class TranslatePrompt(unittest.TestCase):
         self.assertEqual(sent, [0])
 
 
+class FollowUpContext(unittest.TestCase):
+    """A follow-up question about a long text that another tool started the chat with."""
+
+    def test_first_text_and_answer_are_kept(self):
+        n = ask.HISTORY_CHARS
+        turns = [{"role": "user", "content": "S" * n}, {"role": "assistant", "content": "T" * n},
+                 {"role": "user", "content": "q1"}, {"role": "assistant", "content": "a1"},
+                 {"role": "user", "content": "what does that word mean?"}]
+        msgs = ask.Chat(kind="uktr", turns=turns).messages()
+        self.assertEqual([m["role"] for m in msgs], ["system", "user", "assistant", "user", "assistant", "user"])
+        self.assertTrue(msgs[1]["content"].startswith("S" * 100))  # the source, cut
+        self.assertTrue(msgs[2]["content"].startswith("T" * 100))  # its translation, cut
+        self.assertEqual(msgs[-1]["content"], "what does that word mean?")
+        self.assertLessEqual(sum(len(m["content"]) for m in msgs[1:]), n + 200)
+
+    def test_alternates_when_the_middle_is_dropped(self):
+        n = ask.HISTORY_CHARS
+        turns = [{"role": "user", "content": "S" * 10}, {"role": "assistant", "content": "T" * 10},
+                 {"role": "user", "content": "q1"}, {"role": "assistant", "content": "A" * n},
+                 {"role": "user", "content": "q2"}]
+        roles = [m["role"] for m in ask.Chat(kind="eli12", turns=turns).messages()]
+        self.assertEqual(roles, ["system", "user", "assistant", "user"])  # q2 right after the first answer
+
+    def test_a_normal_chat_keeps_the_newest(self):
+        old = {"role": "user", "content": "x" * ask.HISTORY_CHARS}
+        turns = [old, {"role": "assistant", "content": "a"}, {"role": "user", "content": "newest"}]
+        msgs = ask.Chat(turns=turns).messages()
+        self.assertNotIn(old, msgs)
+
+
 class Verbatim(unittest.TestCase):
     """A translation and what you sent are shown as they are, not as Markdown."""
     TEXT = ("# not a heading\nline two of the same paragraph\n\n* not a bullet\n1. not a list\n"

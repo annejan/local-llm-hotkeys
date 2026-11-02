@@ -174,13 +174,24 @@ class Chat:
         os.replace(tmp, self.path)  # a crash never leaves half a file
 
     def messages(self):
+        """The request for the next answer: the rules, then as many of the newest turns as fit in
+        HISTORY_CHARS. A chat from another tool (eli12, uktr) is about its first text and answer:
+        those two are always kept, each cut to a third of HISTORY_CHARS if it is longer, so that a
+        follow-up question still has the text that it is about."""
         today = datetime.date.today().strftime("%A %d %B %Y")
-        keep, size = [], 0
-        for turn in reversed(self.turns):
+        turns, head, size = self.turns, [], 0
+        if self.kind and len(turns) > 2:
+            head = [cut(t, HISTORY_CHARS // 3) for t in turns[:2]]
+            turns, size = turns[2:], sum(len(text_of(t["content"])) for t in head)
+        keep = []
+        for turn in reversed(turns):
             size += len(text_of(turn["content"])) + IMAGE_CHARS * len(images_of(turn["content"]))
             if keep and size > HISTORY_CHARS:
                 break
             keep.insert(0, turn)
+        if head and keep[0]["role"] == "assistant":
+            keep.pop(0)  # after the kept first answer comes a question: user and assistant alternate
+        keep = head + keep
         own = self.first and self.first.rules and self.first_answer()  # another tool's first answer
         rules = self.first.rules if own else RULES.format(system=system(), today=today) + self.follow_up
         return [{"role": "system", "content": rules}, *keep]
@@ -234,6 +245,14 @@ def valid_turn(turn):
         isinstance(p, dict) and (p.get("type") != "text" or isinstance(p.get("text"), str))
         and (p.get("type") != "image_url" or isinstance((p.get("image_url") or {}).get("url"), str))
         for p in content)
+
+
+def cut(turn, chars):
+    """The turn with a text content cut to about chars characters (a turn with images as it is)."""
+    content = turn["content"]
+    if isinstance(content, str) and len(content) > chars:
+        return {**turn, "content": f"{content[:chars]} … ({len(content) - chars} more characters)"}
+    return turn
 
 
 def text_of(content):
