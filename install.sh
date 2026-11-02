@@ -46,7 +46,7 @@ uninstall() {
         [ -f "$APPS/$(basename "$f")" ] && rm "$APPS/$(basename "$f")" && ok "removed hotkey $(basename "$f")"
     done
     [ -f "$MENUS/uktr.desktop" ] && rm "$MENUS/uktr.desktop" && ok "removed the Dolphin menu"
-    command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1
+    for b in kbuildsycoca6 kbuildsycoca5; do command -v $b >/dev/null && $b >/dev/null 2>&1 && break; done
     step "Kept"
     echo "  your config ($CONF) and saved chats (~/.local/share/uktr/ask/)."
     [ -f "$XKB/symbols/copilot" ] && echo "  the Copilot key map: rm $XKB/rules/evdev $XKB/symbols/copilot (then log in again)."
@@ -60,28 +60,61 @@ step "Checking what is installed"
 python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' 2>/dev/null \
     && ok "python3 $(python3 -c 'import platform; print(platform.python_version())')" \
     || { warn "python 3.9 or newer is needed"; exit 1; }
+
+# Which package has what, per distribution family: openSUSE, Debian/Ubuntu, Fedora, Arch.
+. /etc/os-release 2>/dev/null
+case " ${ID:-} ${ID_LIKE:-} " in
+    *" suse "*|*opensuse*) family=suse; installer="sudo zypper install" ;;
+    *" debian "*|*" ubuntu "*) family=debian; installer="sudo apt install" ;;
+    *" fedora "*|*" rhel "*) family=fedora; installer="sudo dnf install" ;;
+    *" arch "*) family=arch; installer="sudo pacman -S --needed" ;;
+    *) family=other; installer="" ;;
+esac
+pyver=$(python3 -c 'import sys; print(f"{sys.version_info[0]}{sys.version_info[1]}")')
+pkg() {  # pkg NAME: the package name in this distribution
+    case "$family:$1" in
+        suse:pyside6) echo "python$pyver-pyside6" ;;
+        suse:notify) echo libnotify-tools ;;          debian:notify) echo libnotify-bin ;;
+        *:notify) echo libnotify ;;
+        debian:spectacle) echo kde-spectacle ;;       *:spectacle) echo spectacle ;;
+        suse:tesseract|debian:tesseract) echo tesseract-ocr ;;
+        *:tesseract) echo tesseract ;;
+        suse:ukr) echo tesseract-ocr-traineddata-ukr ;; debian:ukr) echo tesseract-ocr-ukr ;;
+        fedora:ukr) echo tesseract-langpack-ukr ;;    arch:ukr) echo tesseract-data-ukr ;;
+        suse:pdf) echo poppler-tools ;;               arch:pdf) echo poppler ;;
+        *:pdf) echo poppler-utils ;;
+        debian:pandoc) echo pandoc ;;                 *:pandoc) echo pandoc-cli ;;
+        arch:parec) echo libpulse ;;                  *:parec) echo pulseaudio-utils ;;
+        debian:pyside6) echo python3-pyside6.qtwidgets ;; fedora:pyside6) echo python3-pyside6 ;;
+        arch:pyside6) echo pyside6 ;;
+        *) echo "$1" ;;
+    esac
+}
 missing=""
 need() {  # need COMMAND PACKAGE WHAT
-    if command -v "$1" >/dev/null; then ok "$1"; else warn "$1 not found: $3"; missing="$missing $2"; fi
+    if command -v "$1" >/dev/null; then ok "$1"; else warn "$1 not found: $3"; missing="$missing $(pkg "$2")"; fi
 }
 need wl-copy wl-clipboard "needed for every hotkey (clipboard)"
 need kdialog kdialog "needed for the popup windows"
-need notify-send libnotify-tools "needed for notifications"
+need notify-send notify "needed for notifications"
 need spectacle spectacle "needed for uktr shot and ask --screen"
-need tesseract tesseract-ocr "needed for uktr shot (OCR)"
-need pdftotext poppler-tools "needed for PDF files"
-need pandoc pandoc-cli "needed for epub, docx, odt and html files"
-need parec pulseaudio-utils "needed for uktr listen and dictate"
-if python3 -c 'import PySide6' 2>/dev/null; then ok "PySide6"; else
-    warn "PySide6 not found: the ask window opens in Konsole instead"; missing="$missing python3$(python3 -c 'import sys; print(sys.version_info[1])')-pyside6"; fi
-if command -v tesseract >/dev/null && ! tesseract --list-langs 2>/dev/null | grep -qx ukr; then
-    warn "tesseract has no Ukrainian data"; missing="$missing tesseract-ocr-traineddata-ukr"; fi
-if [ -w /dev/uinput ]; then ok "/dev/uinput (dictate types into the active window)"; else
-    warn "no write access to /dev/uinput: dictate leaves the text on the clipboard (kdeconnect-kde gives access)"
-    missing="$missing kdeconnect-kde"; fi
+need tesseract tesseract "needed for uktr shot (OCR)"
+need pdftotext pdf "needed for PDF files"
+need pandoc pandoc "needed for epub, docx, odt and html files"
+need parec parec "needed for uktr listen and dictate"
+if python3 -c 'import PySide6.QtWidgets' 2>/dev/null; then ok "PySide6"; else
+    warn "PySide6 not found: the ask window opens in Konsole instead"; missing="$missing $(pkg pyside6)"; fi
+if ! command -v tesseract >/dev/null; then missing="$missing $(pkg ukr)"  # with the Ukrainian data
+elif ! tesseract --list-langs 2>/dev/null | grep -qx ukr; then
+    warn "tesseract has no Ukrainian data (for uktr shot)"; missing="$missing $(pkg ukr)"; fi
 if [ -n "$missing" ]; then
-    command -v zypper >/dev/null && echo "  To install the missing packages: sudo zypper install$missing" \
-        || echo "  Missing packages (openSUSE names):$missing"
+    if [ -n "$installer" ]; then echo "  To install the missing packages: $installer$missing"
+    else echo "  Missing packages (names differ per distribution):$missing"; fi
+fi
+if [ -w /dev/uinput ]; then ok "/dev/uinput (dictate types into the active window)"; else
+    warn "no write access to /dev/uinput: dictate leaves the text on the clipboard. To allow it:"
+    echo "    sudo cp $REPO/udev/60-local-llm-hotkeys-uinput.rules /etc/udev/rules.d/"
+    echo "    sudo udevadm control --reload && sudo udevadm trigger --sysname-match=uinput"
 fi
 
 step "Commands in $BIN"
@@ -98,14 +131,16 @@ if [ -f "$CONF" ]; then ok "$CONF exists (not changed)"; else
 lang=$(python3 -c "import sys; sys.path.insert(0, '$REPO'); import llm; print(llm.language()[1])")
 ok "your language: $lang (set UKTR_LANGUAGE in the config to change it)"
 
-if command -v kbuildsycoca6 >/dev/null; then
+SYCOCA=$(command -v kbuildsycoca6 || command -v kbuildsycoca5)
+if [ -n "$SYCOCA" ]; then
     step "KDE hotkeys and Dolphin menu"
     mkdir -p "$APPS" "$MENUS"
     for f in kde/*.desktop; do
         cp "$f" "$APPS/" && ok "$(sed -n 's/^Name=//p' "$f")  [$(keys "$f")]"
     done
     cp kde/servicemenu/uktr.desktop "$MENUS/" && chmod +x "$MENUS/uktr.desktop" && ok "Dolphin: Translate (uktr), Explain like I'm 12 (eli12)"
-    kbuildsycoca6 >/dev/null 2>&1 && ok "KDE knows the new hotkeys"
+    "$SYCOCA" >/dev/null 2>&1 && ok "KDE knows the new hotkeys"
+    [ "$(basename "$SYCOCA")" = kbuildsycoca5 ] && warn "Plasma 5: not tested; the hotkeys are made for Plasma 6"
     echo "  KDE keeps a key you changed yourself. To change a key: System Settings → Shortcuts."
 
     step "The Copilot key"

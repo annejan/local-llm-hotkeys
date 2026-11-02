@@ -210,9 +210,9 @@ that has the focus: a chat, an email, a terminal.
 You speak your language (`DICTATE_LANG`, default `UKTR_LANGUAGE`). The text is typed by
 pasting: it goes on the clipboard and the primary selection, and a virtual keyboard presses
 Shift+Insert, which pastes in Qt and GTK apps, browsers and Konsole. The virtual keyboard
-needs write access to `/dev/uinput`. KDE Connect (`kdeconnect-kde`) installs a udev rule that
-gives it to the logged-in user; check with `test -w /dev/uinput && echo ok`. Without it, the
-text stays on the clipboard for Ctrl+V.
+needs write access to `/dev/uinput`. KDE Connect installs a udev rule that gives it to the logged-in user (on Debian and Ubuntu, see [Requirements](#requirements));
+check with `test -w /dev/uinput && echo ok`. Without it, the text stays on the clipboard for
+Ctrl+V.
 
 If it stops too early or does not stop, set `DICTATE_SILENCE` (the microphone level that
 counts as quiet, default 150) or `DICTATE_PAUSE` (seconds, default 2).
@@ -221,28 +221,50 @@ counts as quiet, default 150) or `DICTATE_PAUSE` (seconds, default 2).
 
 ### Requirements
 
+- KDE Plasma 6 on Wayland, for the hotkeys and popups. Tested on openSUSE Tumbleweed; the
+  installer knows the package names of openSUSE, Debian/Ubuntu, Fedora and Arch.
 - Python 3.9+
-- A server with an OpenAI-compatible API: FastFlowLM (NPU, see [below](#backend-fastflowlm-on-the-npu))
-  or ollama (GPU/CPU)
-- KDE Plasma 6 on Wayland for the hotkeys and popups
+- A server with an OpenAI-compatible API: FastFlowLM on an AMD Ryzen AI NPU (see
+  [below](#backend-fastflowlm-on-the-npu)), or ollama on a GPU/CPU.
 
-On openSUSE Tumbleweed:
+`./install.sh` checks all of this and prints the install command for your distribution.
+These are the same lines:
 
 ```sh
+# openSUSE
 sudo zypper install wl-clipboard kdialog libnotify-tools spectacle python313-pyside6 \
-    tesseract-ocr tesseract-ocr-traineddata-ukr poppler-tools pandoc-cli pulseaudio-utils \
-    kdeconnect-kde
+    tesseract-ocr tesseract-ocr-traineddata-ukr poppler-tools pandoc-cli pulseaudio-utils
+# Debian 13, Ubuntu 25.10+
+sudo apt install wl-clipboard kdialog libnotify-bin kde-spectacle python3-pyside6.qtwidgets \
+    tesseract-ocr tesseract-ocr-ukr poppler-utils pandoc pulseaudio-utils
+# Fedora
+sudo dnf install wl-clipboard kdialog libnotify spectacle python3-pyside6 \
+    tesseract tesseract-langpack-ukr poppler-utils pandoc-cli pulseaudio-utils
+# Arch
+sudo pacman -S --needed wl-clipboard kdialog libnotify spectacle pyside6 \
+    tesseract tesseract-data-ukr poppler pandoc-cli libpulse
 ```
 
 | Package | Needed for |
 |---|---|
-| `wl-clipboard`, `kdialog`, `libnotify-tools` | the hotkeys: clipboard, popup, notifications |
-| `python313-pyside6` | the `ask` window (without it, `ask` opens in Konsole) |
-| `spectacle` | `uktr shot`, `ask --screen` |
-| `tesseract-ocr`, `tesseract-ocr-traineddata-ukr` | `uktr shot` (OCR) |
-| `poppler-tools` (`pdftotext`), `pandoc-cli` | PDF, and epub/docx/odt/html files |
-| `pulseaudio-utils` (`parec`) | `uktr listen`, `dictate` |
-| `kdeconnect-kde` | `dictate` types into the active window (udev rule for `/dev/uinput`) |
+| wl-clipboard, kdialog, libnotify | the hotkeys: clipboard, popup, notifications |
+| PySide6 | the `ask` window (without it, `ask` opens in Konsole) |
+| spectacle | `uktr shot`, `ask --screen` |
+| tesseract with Ukrainian data | `uktr shot` (OCR) |
+| poppler (`pdftotext`), pandoc | PDF, and epub/docx/odt/html files |
+| pulseaudio-utils (`parec`) | `uktr listen`, `dictate` |
+
+`dictate` types with a virtual keyboard, which needs write access to `/dev/uinput`. KDE
+Connect gives the logged-in user that access on openSUSE, Fedora and Arch. On Debian and
+Ubuntu, add the same rule from this repository:
+
+```sh
+sudo cp udev/60-local-llm-hotkeys-uinput.rules /etc/udev/rules.d/
+sudo udevadm control --reload && sudo udevadm trigger --sysname-match=uinput
+```
+
+Kubuntu 24.04 has Plasma 5 and no PySide6: the commands work, but the hotkeys are not tested
+there and `ask` opens in Konsole.
 
 ### Install with the script
 
@@ -254,7 +276,8 @@ cd local-llm-hotkeys
 
 `install.sh` needs no root. It:
 
-- checks the packages above and prints the `zypper` line for what is missing,
+- checks the packages above and prints the install line for your distribution (zypper, apt,
+  dnf or pacman), and the udev rule for `dictate` if it is needed,
 - links the commands into `~/.local/bin` (they point into this directory, so keep it where
   it is; after a `git pull` you have the new version at once),
 - creates `~/.config/uktr/config` if there is none, and shows your language,
@@ -303,7 +326,9 @@ works as Alt here.
 
 ## Backend: FastFlowLM on the NPU
 
-Tested on a Ryzen AI 7 PRO 350 (XDNA2) with openSUSE Tumbleweed, kernel 7.2+ (`amdxdna`).
+FastFlowLM runs on the NPU of AMD Ryzen AI 300 laptops (XDNA2) with the `amdxdna` kernel
+driver. Its portable tarball works on any distribution. Tested on a Ryzen AI 7 PRO 350 with
+openSUSE Tumbleweed, kernel 7.2+. Without such an NPU, use ollama (see [Models](#models)).
 
 1. Get the portable Linux tarball (`fastflowlm_<version>_linux.tar.gz`) from the FastFlowLM
    releases. It includes XRT and the xdna plugin, so you do not have to build XRT. Put `flm`
