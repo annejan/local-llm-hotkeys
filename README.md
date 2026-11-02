@@ -244,22 +244,33 @@ sudo zypper install wl-clipboard kdialog libnotify-tools spectacle python313-pys
 | `pulseaudio-utils` (`parec`) | `uktr listen`, `dictate` |
 | `kdeconnect-kde` | `dictate` types into the active window (udev rule for `/dev/uinput`) |
 
-### The tools
+### Install with the script
 
 ```sh
 git clone https://github.com/annejan/local-llm-hotkeys.git
 cd local-llm-hotkeys
+./install.sh
+```
+
+`install.sh` needs no root. It:
+
+- checks the packages above and prints the `zypper` line for what is missing,
+- links the commands into `~/.local/bin` (they point into this directory, so keep it where
+  it is; after a `git pull` you have the new version at once),
+- creates `~/.config/uktr/config` if there is none, and shows your language,
+- installs the KDE hotkeys, the Dolphin menu and the Copilot key map,
+- checks the model server and lists the models that are missing.
+
+Run it again after an update; it changes only what is missing or new. `./install.sh --flm`
+also installs and starts the FastFlowLM service, and `./install.sh --uninstall` removes
+everything it added (your config and saved chats stay).
+
+### Install by hand
+
+```sh
 mkdir -p ~/.local/bin ~/.config/uktr
 for tool in uktr eli12 fixtext ask dictate; do ln -s "$PWD/$tool.py" ~/.local/bin/$tool; done
 cp config.example ~/.config/uktr/config
-```
-
-The commands are symlinks into this directory, so keep it where it is. `~/.local/bin` must be
-in your `PATH` (it is by default on openSUSE). Check with `uktr --help`.
-
-### KDE hotkeys and Dolphin menu
-
-```sh
 cp kde/*.desktop ~/.local/share/applications/
 kbuildsycoca6
 mkdir -p ~/.local/share/kio/servicemenus
@@ -267,6 +278,7 @@ cp kde/servicemenu/uktr.desktop ~/.local/share/kio/servicemenus/
 chmod +x ~/.local/share/kio/servicemenus/uktr.desktop
 ```
 
+`~/.local/bin` must be in your `PATH` (it is by default on openSUSE). Check with `uktr --help`.
 The shortcuts come from `X-KDE-Shortcuts` in the `.desktop` files. After `kbuildsycoca6`,
 KDE (Plasma 6) registers them at once. To change a key, use System Settings → Shortcuts.
 
@@ -319,11 +331,11 @@ Tested on a Ryzen AI 7 PRO 350 (XDNA2) with openSUSE Tumbleweed, kernel 7.2+ (`a
 4. Install and start the server (OpenAI API on port 52625):
 
    ```sh
-   mkdir -p ~/.config/systemd/user
-   cp systemd/flm.service ~/.config/systemd/user/
-   systemctl --user daemon-reload
-   systemctl --user enable --now flm
+   ./install.sh --flm
    ```
+
+   Or by hand: copy `systemd/flm.service` to `~/.config/systemd/user/`, then
+   `systemctl --user daemon-reload && systemctl --user enable --now flm`.
 
    `-a 1` loads Whisper next to the other model.
 
@@ -382,8 +394,8 @@ UKTR_LANG=ru uktr listen
 
 ## Development
 
-`llm.py` holds what the tools share: config, the chat requests, file extraction, clipboard,
-notifications and the popup. The tests need no server:
+`llm.py` holds what the tools share: config, your language, the chat and Whisper requests,
+file extraction, clipboard, notifications and the popup. The tests need no server:
 
 ```sh
 python3 -m unittest discover -s tests
