@@ -21,7 +21,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import llm  # noqa: E402
+import llm
 
 conf = llm.conf
 MODEL = conf.get("UKTR_MODEL", "translategemma:4b")

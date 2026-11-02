@@ -33,7 +33,7 @@ key? Every action also has a Meta+Shift shortcut.
 | Copilot or Meta+Shift+Q | chat (`ask --popup`) |
 | Alt+Copilot or Meta+Shift+T | translate the clipboard to your language (`uktr clip`) |
 | Ctrl+Copilot or Meta+Shift+E | explain the clipboard (`eli12 clip`) |
-| Ctrl+Alt+Copilot | explain the active window (`ask --screen`) |
+| Ctrl+Alt+Copilot or Meta+Shift+W | explain the active window (`ask --screen`) |
 | Meta+Shift+Y | translate a screen region (`uktr shot`) |
 | Meta+Shift+F | fix spelling and grammar of the clipboard (`fixtext clip`) |
 | Meta+Shift+D | dictate: speak, and the text is typed into the active window (`dictate`) |
@@ -181,8 +181,8 @@ model makes mistakes, so check facts that matter.
 
 ### Explain the active window
 
-Ctrl+Alt+Copilot (`ask --screen`) takes a screenshot of the active window and opens the chat
-with it. The model says what is on the screen, and explains an error, a question or a choice
+Ctrl+Alt+Copilot or Meta+Shift+W (`ask --screen`) takes a screenshot of the active window and
+opens the chat with it. The model says what is on the screen, and explains an error, a question or a choice
 if there is one. Then ask follow-up questions about it ("what does this setting do?").
 
 `qwen3.5:9b` reads images, so this is the same model as the chat: about 8 s for the first

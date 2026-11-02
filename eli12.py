@@ -18,7 +18,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import llm  # noqa: E402
+import llm
 
 MODEL = llm.conf.get("ELI12_MODEL", "qwen3.5:9b")
 SENTENCES = int(llm.conf.get("ELI12_SENTENCES", "5"))

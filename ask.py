@@ -23,6 +23,7 @@ Uses the same backend and config file as uktr (~/.config/uktr/config, UKTR_URL).
   ASK_SCREEN_PROMPT  the first question for --screen ({language} = your language)
 """
 import base64
+import contextlib
 import datetime
 import functools
 import json
@@ -34,7 +35,7 @@ import tempfile
 import threading
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import llm  # noqa: E402
+import llm
 
 MODEL = llm.conf.get("ASK_MODEL", "qwen3.5:9b")
 HISTORY_CHARS = 24000  # older turns are dropped so the prompt stays inside the context window
@@ -126,7 +127,7 @@ class Chat:
             if keep and size > HISTORY_CHARS:
                 break
             keep.insert(0, turn)
-        return [{"role": "system", "content": RULES.format(system=system(), today=today)}] + keep
+        return [{"role": "system", "content": RULES.format(system=system(), today=today)}, *keep]
 
     def ask(self, question):
         """Yield the answer in pieces. The answer goes into the history when the stream ends,
@@ -261,10 +262,21 @@ def window(first=None):
     try:
         from PySide6.QtCore import QObject, Qt, QTimer, Signal
         from PySide6.QtGui import QImage, QKeySequence, QShortcut, QTextDocument
-        from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QListWidget,
-                                       QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit,
-                                       QPushButton, QSplitter, QTextBrowser, QVBoxLayout,
-                                       QWidget)
+        from PySide6.QtWidgets import (
+            QApplication,
+            QHBoxLayout,
+            QLabel,
+            QListWidget,
+            QListWidgetItem,
+            QMenu,
+            QMessageBox,
+            QPlainTextEdit,
+            QPushButton,
+            QSplitter,
+            QTextBrowser,
+            QVBoxLayout,
+            QWidget,
+        )
     except ImportError:
         # No Qt: chat in a terminal window instead.
         os.execvp("konsole", ["konsole", "-e", os.path.realpath(__file__)])
@@ -407,10 +419,8 @@ def window(first=None):
             if QMessageBox.question(self, "ask", f"Delete this chat?\n\n{item.toolTip()}") \
                     != QMessageBox.Yes:
                 return
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(path)
-            except OSError:
-                pass
             if path == self.chat.path:
                 self.chat = Chat(save=True)
                 self.render()
@@ -539,7 +549,7 @@ def main(argv):
         return window([{"type": "text", "text": prompt},
                        {"type": "image_url", "image_url": {"url": shot}}])
     if argv == ["--list"]:
-        for i, (path, title, when, n) in enumerate(saved_chats(), 1):
+        for i, (_path, title, when, n) in enumerate(saved_chats(), 1):
             print(f"{i:3}  {when:%Y-%m-%d %H:%M}  {title}  ({questions(n)})")
         return
     if argv[:1] == ["--resume"]:

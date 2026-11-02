@@ -1,0 +1,14 @@
+# Lint rules for CI and local runs: ruff check .
+line-length = 120
+target-version = "py39"
+
+[lint]
+# pycodestyle, pyflakes, import order, bugbear, pyupgrade, simplify, ruff's own rules
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = [
+    "E402",    # the tools put their own directory on sys.path before importing llm
+    "SIM115",  # a pid file read in one expression is fine
+    "RUF001",  # Cyrillic and typographic characters in strings are on purpose
+    "RUF002",
+    "RUF003",
+]

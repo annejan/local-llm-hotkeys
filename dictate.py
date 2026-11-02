@@ -23,7 +23,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import llm  # noqa: E402
+import llm
 
 LANG = llm.conf["DICTATE_LANG"] if "DICTATE_LANG" in llm.conf else llm.language()[0]
 SILENCE = float(llm.conf.get("DICTATE_SILENCE", "150"))

@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Every tool starts
+        run: for tool in uktr eli12 fixtext ask dictate; do python "$tool.py" --help > /dev/null; done
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install shellcheck and desktop-file-utils
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck desktop-file-utils
+      - name: ruff (Python)
+        run: pipx run ruff check --output-format github .
+      - name: shellcheck (install.sh, tests)
+        run: shellcheck install.sh tests/*.sh
+      - name: desktop-file-validate (hotkeys)
+        run: desktop-file-validate kde/*.desktop
+
+  packages:
+    # install.sh prints the packages to install; check that each one exists in that distribution.
+    name: Packages (${{ matrix.distro }})
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: openSUSE Tumbleweed
+            image: opensuse/tumbleweed
+            prepare: zypper -q --non-interactive refresh && zypper -q --non-interactive install python3
+          - distro: Debian 13
+            image: debian:trixie
+            prepare: apt-get update -qq && apt-get install -y -qq python3
+          - distro: Ubuntu 26.04
+            image: ubuntu:26.04
+            prepare: apt-get update -qq && apt-get install -y -qq python3
+          - distro: Fedora
+            image: fedora:latest
+            prepare: dnf -q -y install python3
+          - distro: Arch
+            image: archlinux:latest
+            prepare: pacman -Sy --noconfirm python
+    steps:
+      - name: Prepare
+        run: ${{ matrix.prepare }}
+      - uses: actions/checkout@v5
+      - name: Every package that install.sh names exists
+        run: tests/distro-packages.sh

@@ -14,7 +14,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import llm  # noqa: E402
+import llm
 
 MODEL = llm.conf.get("FIX_MODEL", "qwen3.5:9b")
 MAX_CHARS = 20000  # longer text is refused; a spelling fix of a book is not a hotkey job

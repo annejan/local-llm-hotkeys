@@ -57,11 +57,14 @@ uninstall() {
 case "${1:-}" in ""|--flm) ;; *) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;; esac
 
 step "Checking what is installed"
-python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' 2>/dev/null \
-    && ok "python3 $(python3 -c 'import platform; print(platform.python_version())')" \
-    || { warn "python 3.9 or newer is needed"; exit 1; }
+if python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' 2>/dev/null; then
+    ok "python3 $(python3 -c 'import platform; print(platform.python_version())')"
+else
+    warn "python 3.9 or newer is needed"; exit 1
+fi
 
 # Which package has what, per distribution family: openSUSE, Debian/Ubuntu, Fedora, Arch.
+# shellcheck source=/dev/null
 . /etc/os-release 2>/dev/null
 case " ${ID:-} ${ID_LIKE:-} " in
     *" suse "*|*opensuse*) family=suse; installer="sudo zypper install" ;;

@@ -5,12 +5,13 @@ import os
 import sys
 import tempfile
 import unittest
+from typing import ClassVar
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import ask  # noqa: E402
-import eli12  # noqa: E402
-import fixtext  # noqa: E402
-import llm  # noqa: E402
+import ask
+import eli12
+import fixtext
+import llm
 
 
 class Config(unittest.TestCase):
@@ -123,7 +124,7 @@ class Eli12(unittest.TestCase):
 
 
 class Ask(unittest.TestCase):
-    shot = [{"type": "text", "text": "What is on this screen?"},
+    shot: ClassVar[list] = [{"type": "text", "text": "What is on this screen?"},
             {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,AAAA"}}]
 
     def test_text_and_images(self):
