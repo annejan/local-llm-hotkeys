@@ -428,6 +428,10 @@ file extraction, clipboard, notifications and the popup. The tests need no serve
 python3 -m unittest discover -s tests
 ```
 
+CI runs the tests on Python 3.9 to 3.13, lints with ruff and shellcheck, and checks the package
+names of every distribution. See [CONTRIBUTING.md](CONTRIBUTING.md); report security problems
+as described in [SECURITY.md](SECURITY.md).
+
 ## License
 
 MIT, see [LICENSE](LICENSE).

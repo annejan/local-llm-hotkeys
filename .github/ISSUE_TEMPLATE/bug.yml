@@ -1,0 +1,29 @@
+name: Bug report
+description: Something does not work as described
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what happened instead? Paste error messages.
+    validations:
+      required: true
+  - type: input
+    id: distro
+    attributes:
+      label: Distribution and Plasma version
+      placeholder: openSUSE Tumbleweed, Plasma 6.8.2
+    validations:
+      required: true
+  - type: input
+    id: backend
+    attributes:
+      label: Model server and hardware
+      placeholder: FastFlowLM on a Ryzen AI 7 350 / ollama on a GPU
+  - type: textarea
+    id: install
+    attributes:
+      label: Output of ./install.sh
+      description: It checks packages, hotkeys, the server and the models.
+      render: text

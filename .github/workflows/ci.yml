@@ -23,8 +23,8 @@ jobs:
           - {python: "3.11", os: ubuntu-latest}
           - {python: "3.13", os: ubuntu-latest}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
         with:
           python-version: ${{ matrix.python }}
       - name: Unit tests
@@ -36,7 +36,7 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
       - name: Install shellcheck and desktop-file-utils
         run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck desktop-file-utils
       - name: ruff (Python)
@@ -73,6 +73,6 @@ jobs:
     steps:
       - name: Prepare
         run: ${{ matrix.prepare }}
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
       - name: Every package that install.sh names exists
         run: tests/distro-packages.sh
