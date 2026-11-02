@@ -20,6 +20,7 @@ Uses the same server and config file as uktr (~/.config/uktr/config, UKTR_ASR_UR
   DICTATE_MAX       longest dictation in seconds, default 120
   DICTATE_TO        language for --translate, default English
 """
+import contextlib
 import os
 import signal
 import subprocess
@@ -41,6 +42,7 @@ BLOCK = llm.RATE // 4 * 2  # 0.25 s of 16 kHz s16 audio, in bytes
 RUNTIME = os.environ.get("XDG_RUNTIME_DIR")
 PIDFILE = os.path.join(RUNTIME, "dictate.pid") if RUNTIME else None
 ME = os.path.realpath(__file__)
+STOP = []  # not empty once the hotkey was pressed again (SIGUSR1)
 
 
 class Keyboard:
@@ -94,17 +96,23 @@ def running():
     return pid if any(os.path.realpath(os.path.join(cwd, a)) == ME for a in args[:2] if a) else None
 
 
-def record(log=print):
+def catch_stop():
+    """From now on SIGUSR1 ends the recording. Before this call it ends the process, so it
+    must come before the pid file exists: a second press during start-up killed the first
+    dictation silently."""
+    signal.signal(signal.SIGUSR1, lambda *_: STOP.append(True))
+
+
+def record():
     """Record the microphone until a pause after speech, SIGUSR1 (hotkey pressed again),
     Ctrl+C or DICTATE_MAX. Returns the audio, or b"" if nothing was said."""
-    stop = []
-    signal.signal(signal.SIGUSR1, lambda *_: stop.append(True))
+    catch_stop()
     rec = subprocess.Popen(["parec", "-d", "@DEFAULT_SOURCE@", "--format=s16le",
                             f"--rate={llm.RATE}", "--channels=1", "--raw", "--latency-msec=100"],
                            stdout=subprocess.PIPE)
     audio, heard, quiet, n = bytearray(), False, 0.0, 0
     try:
-        while not stop and (block := rec.stdout.read(BLOCK)):
+        while not STOP and (block := rec.stdout.read(BLOCK)):
             n += 1
             if n <= 2:
                 continue  # the first 0.5 s holds the click of the microphone switching on
@@ -149,11 +157,15 @@ def main(argv):
     if not PIDFILE:
         with llm.errors("dictate", gui=True):
             raise llm.Error("XDG_RUNTIME_DIR is not set (is this a desktop session?)")
-    pid = running()
-    if pid:  # the hotkey again: stop that dictation, it types the text
-        return os.kill(pid, signal.SIGUSR1)
-    with open(PIDFILE, "w") as f:
-        f.write(str(os.getpid()))
+    with llm.errors("dictate", gui=True):
+        pid = running()
+        if pid:  # the hotkey again: stop that dictation, it types the text
+            with contextlib.suppress(ProcessLookupError):  # it ended just now
+                os.kill(pid, signal.SIGUSR1)
+            return
+        catch_stop()
+        with open(PIDFILE, "w") as f:
+            f.write(str(os.getpid()))
     keyboard = None
     try:
         with llm.errors("dictate", gui=True):

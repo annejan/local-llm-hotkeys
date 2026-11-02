@@ -39,5 +39,9 @@ Release files are attested by GitHub and `SHA256SUMS` is signed with the key abo
   instructions that are hidden in them. Its output is never run. A link in an `ask` answer opens
   only after you confirm the full address, and control characters are removed before text is
   printed or pasted. An explanation or translation can still be wrong on purpose.
+- `uktr FILE` and `eli12 FILE` read the file that a link points to. A downloaded archive
+  can hold `report.txt -> ~/.ssh/id_ed25519`; "Translate (uktr)" then sends that key to the
+  (local) model and writes the result next to the link. Look before you translate a folder
+  from someone else.
 - Text and screenshots go to the server in `UKTR_URL`. If you point that to a remote server,
   your clipboard and screenshots go there.

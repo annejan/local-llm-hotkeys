@@ -88,7 +88,8 @@ def translate_file(src, dst=None, notify=False):
     if notify:
         llm.notify(f"translating {os.path.basename(src)}…", "uktr")
     else:
-        print(f"{src} → {dst} ({len(text)} chars, model {MODEL})", file=sys.stderr)
+        # plain(): a file name from someone else's archive can hold escape codes
+        print(llm.plain(f"{src} → {dst} ({len(text)} chars, model {MODEL})"), file=sys.stderr)
     with open_output(dst) as out:
         translate_long(text, out, progress=not notify)
     if notify:

@@ -74,14 +74,17 @@ class Error(Exception):
     """A problem to show to the user as it is, without a traceback."""
 
 
-CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+# C0 and C1 control characters except tab and newline, and the Unicode characters that change
+# the direction or the visibility of text (bidi overrides, zero-width characters).
+CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
 
 
 def plain(text):
     """Text without control characters; newlines and tabs stay. What a model or Whisper writes
     can come from a document or a web page of someone else. Escape sequences in it make a
-    terminal act (set the title, write the clipboard, hide a link), and an escape or a carriage
-    return in text that is pasted into a terminal can run a command."""
+    terminal act (set the title, write the clipboard, hide a link), an escape or a carriage
+    return in text that is pasted into a terminal can run a command, and a bidi override
+    shows text in another order than it is."""
     return CONTROL.sub("", text)
 
 
@@ -231,7 +234,7 @@ def rms(pcm):
     """Loudness of s16 audio (every 4th sample is enough). The average is taken off first:
     some microphones add a constant offset (here -4678) that is not sound."""
     import array
-    a = array.array("h", pcm)[::4]
+    a = array.array("h", pcm[:len(pcm) & ~1])[::4]  # a short last block from parec can be odd
     if not a:
         return 0.0
     mean = sum(a) / len(a)
@@ -240,11 +243,16 @@ def rms(pcm):
 
 # --- files ---
 
-def run(cmd, what):
+def run(cmd, what, timeout=600):
+    """The output of a helper such as pdftotext or pandoc. A crafted document can keep a
+    helper busy forever; from the Dolphin menu nobody could cancel that, so it is stopped."""
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
+        return subprocess.run(cmd, capture_output=True, check=True, timeout=timeout,
+                              encoding="utf-8", errors="replace").stdout
     except FileNotFoundError:
         raise Error(f"{cmd[0]} is not installed (needed for {what})") from None
+    except subprocess.TimeoutExpired:
+        raise Error(f"{cmd[0]} took more than {timeout:g} s and was stopped") from None
     except subprocess.CalledProcessError as e:
         raise Error(f"{cmd[0]} failed: {e.stderr.strip()[:200]}") from None
 
@@ -285,11 +293,20 @@ def notify(msg, app, timeout=3000):
     subprocess.run(["notify-send", "-a", app, "-t", str(timeout), app, html.escape(msg)])
 
 
+def textbox_lines(text):
+    """The lines of text as kdialog --textbox must get them, so that it shows them as they are.
+    kdialog shows a line that starts with an HTML tag as rich text: a translated document
+    could then hide part of its own translation (a span in a 1 px font) or lose its tags. Each
+    line is made explicit rich text with the characters escaped, and white space kept."""
+    return [f'<qt><span style="white-space:pre-wrap">{html.escape(line)}</span></qt>'
+            for line in text.split("\n")]
+
+
 def popup(title, text):
-    """Show text in a window; it is also copied to the clipboard."""
+    """Show text in a window; it is also copied to the clipboard (as it is)."""
     copy(text)
     with tempfile.NamedTemporaryFile("w", suffix=".txt", encoding="utf-8") as f:
-        f.write(text)
+        f.write("\n".join(textbox_lines(text)))
         f.flush()
         subprocess.run(["kdialog", "--title", title, "--textbox", f.name, "800", "500"])
 

@@ -107,6 +107,14 @@ class Stream(unittest.TestCase):
 class Desktop(unittest.TestCase):
     def test_plain(self):
         self.assertEqual(llm.plain("x\x1b[31my\x7f\r\nz\tö"), "x[31my\nz\tö")
+        # A bidi override turns "pay 10 EUR" into "pay 01 EUR" on screen; zero-width characters hide.
+        self.assertEqual(llm.plain("pay \u202e01\u202c EUR\u200b"), "pay 01 EUR")
+
+    def test_textbox_lines(self):
+        lines = llm.textbox_lines("a <b>x</b> & y\n\n| a   | b |")
+        self.assertEqual(len(lines), 3)
+        self.assertEqual(lines[0], '<qt><span style="white-space:pre-wrap">a &lt;b&gt;x&lt;/b&gt; &amp; y</span></qt>')
+        self.assertIn("| a   | b |", lines[2])
 
     def test_notify_escapes_markup(self):
         calls = []
@@ -142,7 +150,40 @@ class Output(unittest.TestCase):
                 self.assertEqual(f.read(), "keep")
 
 
+class Run(unittest.TestCase):
+    def test_timeout(self):
+        with self.assertRaises(llm.Error) as e:
+            llm.run([sys.executable, "-c", "import time; time.sleep(5)"], "x", timeout=0.3)
+        self.assertIn("stopped", str(e.exception))
+
+    def test_utf8_with_replacement(self):
+        out = llm.run([sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'a\\xffb')"], "x")
+        self.assertEqual(out, "a\ufffdb")
+
+    def test_not_installed(self):
+        with self.assertRaises(llm.Error) as e:
+            llm.run(["no-such-helper-xyz"], "PDF files")
+        self.assertIn("not installed", str(e.exception))
+
+
+class Audio(unittest.TestCase):
+    def test_rms_odd_length_block(self):
+        self.assertEqual(llm.rms(b"\x00\x00\x00"), 0.0)
+        self.assertEqual(llm.rms(b""), 0.0)
+        loud = b"\x00\x10" + bytes(6) + b"\x00\xf0" + bytes(6)  # samples 0 and 4 differ (every 4th counts)
+        self.assertGreater(llm.rms(loud + b"\x01"), 0)
+
+
 class Dictate(unittest.TestCase):
+    def test_stop_signal_is_caught(self):
+        """After catch_stop(), the hotkey's SIGUSR1 ends the recording, not the process."""
+        import signal
+        dictate.STOP.clear()
+        dictate.catch_stop()
+        os.kill(os.getpid(), signal.SIGUSR1)
+        self.assertTrue(dictate.STOP)
+        dictate.STOP.clear()
+
     def test_one_line(self):
         real = llm.transcribe
         llm.transcribe = lambda audio, lang: "ls\nrm -rf x\t now"
@@ -283,6 +324,29 @@ class Ask(unittest.TestCase):
     def test_questions(self):
         self.assertEqual(ask.questions(2), "1 question")
         self.assertEqual(ask.questions(6), "3 questions")
+
+    def test_valid_turn(self):
+        self.assertTrue(ask.valid_turn({"role": "user", "content": "hi"}))
+        self.assertTrue(ask.valid_turn({"role": "user", "content": self.shot}))
+        for bad in ({"role": "system", "content": "x"}, {"role": "user"}, {"role": "user", "content": 3},
+                    {"role": "user", "content": [{"type": "text"}]},
+                    {"role": "user", "content": [{"type": "image_url", "image_url": {}}]}, "hi", None):
+            self.assertFalse(ask.valid_turn(bad), bad)
+
+    def test_broken_files_are_skipped(self):
+        with tempfile.TemporaryDirectory() as d:
+            real, ask.SAVE_DIR = ask.SAVE_DIR, d
+            try:
+                for name, text in (("list.json", "[]"), ("turns.json", '{"turns": 3}'),
+                                   ("title.json", '{"title": {"a": 1}, "turns": []}'), ("bad.json", "{")):
+                    with open(os.path.join(d, name), "w") as f:
+                        f.write(text)
+                self.assertEqual([t for _, t, _, _ in ask.saved_chats()], ["{'a': 1}"])  # a title is a string
+                for name in ("list.json", "turns.json"):
+                    with self.assertRaises(ValueError):
+                        ask.Chat.load(os.path.join(d, name))
+            finally:
+                ask.SAVE_DIR = real
 
     def test_save_and_load(self):
         with tempfile.TemporaryDirectory() as d:
