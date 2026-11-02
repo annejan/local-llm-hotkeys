@@ -206,6 +206,15 @@ Model: `ASK_MODEL`, default `qwen3.5:9b`. The first words come after about 1 s. 
 conversation gets longer than about 24,000 characters, the oldest messages are dropped. A 9B
 model makes mistakes, so check facts that matter.
 
+To choose the model per chat, list the ones you want in `ASK_MODELS`, for example
+`ASK_MODELS=qwen3.5:9b,gemma4-it:e4b,gpt-oss:20b`. With two or more, the window gets a menu
+next to New chat; in the terminal, type `/model NAME`. The chat keeps its model when you open
+it again. FastFlowLM loads one model at a time, so the first answer after a switch takes a few
+seconds more. The list is yours to choose: the server also lists models that are not
+downloaded, and does not say which ones read images (needed for screenshots). In a test with
+instructions hidden in texts (`tests/injection.py`), the small vision models followed them far
+more often than `qwen3.5:9b` and `gemma4-it:e4b`.
+
 ### Explain the active window or a region
 
 Ctrl+Alt+Copilot or Meta+Shift+W (`ask --screen`) takes a screenshot of the active window and
@@ -497,6 +506,7 @@ with the same name override the file. See `config.example`.
 | `UKTR_WINDOW` | `1` | `0`: show the translation (`clip`, `shot`) in a plain text box, not in the chat window |
 | `FIX_MODEL` | `qwen3.5:9b` | chat model for `fixtext` |
 | `ASK_MODEL` | `qwen3.5:9b` | chat model for `ask` (must read images for `--screen`) |
+| `ASK_MODELS` | (none) | models to choose from per chat, comma-separated; a menu with two or more |
 | `ASK_HISTORY` | `1` | `0`: do not save `ask` chats |
 | `DICTATE_LANG` | `UKTR_LANGUAGE` | language you speak to `dictate` (empty = Whisper guesses) |
 | `DICTATE_SILENCE` | `150` | microphone level that counts as quiet |

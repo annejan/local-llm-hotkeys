@@ -20,6 +20,8 @@ Chats from the window and the terminal chat are saved after every answer, as JSO
 
 Uses the same backend and config file as uktr (~/.config/uktr/config, UKTR_URL).
   ASK_MODEL     default qwen3.5:9b (any chat model)
+  ASK_MODELS    models to choose from in the window, such as qwen3.5:9b,gemma4-it:e4b,gpt-oss:20b;
+                with two or more, a menu picks the model per chat (/model in the terminal)
   ASK_HISTORY   default 1; 0 = do not save chats
   ASK_SCREEN_PROMPT  the first question for --screen ({language} = your language)
 """
@@ -41,6 +43,9 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 import llm
 
 MODEL = llm.conf.get("ASK_MODEL", "qwen3.5:9b")
+# Models to choose from (ASK_MODELS=a,b,c). Not the server's list: FastFlowLM lists every model it
+# knows, also the ones that are not downloaded, and does not say which can chat or read images.
+MODELS = list(dict.fromkeys(m.strip() for m in llm.conf.get("ASK_MODELS", "").split(",") if m.strip()))
 HISTORY_CHARS = 24000  # older turns are dropped so the prompt stays inside the context window
 SAVE = llm.conf.get("ASK_HISTORY", "1") != "0"
 SAVE_DIR = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
@@ -128,6 +133,8 @@ class Chat:
             raise ValueError(f"{path} is not a saved chat")
         kind = data.get("kind") if data.get("kind") in KINDS else ""
         model, follow_up = KINDS[kind]() if kind else (MODEL, "")
+        if data.get("model") in MODELS:  # picked for this chat, and still one to choose from
+            model = data["model"]
         return cls(save=True, path=path, turns=turns, model=model, kind=kind, follow_up=follow_up)
 
     @property
@@ -338,7 +345,8 @@ def when_text(when):
 def terminal(chat=None):
     import readline  # noqa: F401  (line editing and arrow-up history for input())
     chat = chat or Chat(save=True)
-    print(f"ask {MODEL}: /new starts a new chat, Ctrl+D or /quit quits.", file=sys.stderr)
+    print(f"ask {chat.model}: /new starts a new chat, /model NAME picks a model, Ctrl+D or /quit "
+          "quits.", file=sys.stderr)
     for t in chat.turns:  # a resumed chat: show it first
         # plain(): a saved question can be a copied text (uktr, eli12) with escape codes in it
         if t["role"] == "user":
@@ -357,8 +365,15 @@ def terminal(chat=None):
         if question in ("/quit", "/exit"):
             return
         if question == "/new":
-            chat = Chat(save=True)
+            chat = Chat(save=True, model=chat.model)
             print("(new chat)", file=sys.stderr)
+            continue
+        if question.split()[0] == "/model":
+            name = question[len("/model"):].strip()
+            if name:
+                chat.model = name
+            others = ", ".join(m for m in MODELS if m != chat.model)
+            print(f"(model: {chat.model}{'; also: ' + others if others else ''})", file=sys.stderr)
             continue
         answer = chat.ask(question)
         try:
@@ -402,6 +417,7 @@ def window(first=None, chat=None, title=None):
         from PySide6.QtGui import QDesktopServices, QIcon, QImage, QKeySequence, QShortcut, QTextDocument
         from PySide6.QtWidgets import (
             QApplication,
+            QComboBox,
             QHBoxLayout,
             QLabel,
             QListWidget,
@@ -481,6 +497,7 @@ def window(first=None, chat=None, title=None):
             super().__init__()
             self.chat, self.busy, self.stop = chat or Chat(save=True), False, threading.Event()
             self.answer, self.error, self.render_due = "", "", False
+            self.title, self.last_model = title, None
             self.setWindowTitle(title or f"ask — {self.chat.model}")
             self.resize(1000, 680)
 
@@ -502,11 +519,19 @@ def window(first=None, chat=None, title=None):
             copy = QPushButton("Copy answer", clicked=self.copy_answer)
             saved = QPushButton("Saved chats", clicked=self.toggle_list, enabled=SAVE)
 
+            # A menu of models, only when ASK_MODELS names two or more: the model of this chat.
+            self.models = None
+            if len(MODELS) >= 2:
+                self.models = QComboBox()
+                self.models.setToolTip("The model that answers in this chat (ASK_MODELS)")
+                self.models.activated.connect(lambda _: self.pick_model(self.models.currentText()))
+
             row = QHBoxLayout()
             row.addWidget(saved)
             row.addWidget(self.status, 1)
-            for b in (new, copy, self.button):
-                row.addWidget(b)
+            for b in (self.models, new, copy, self.button):
+                if b:
+                    row.addWidget(b)
             right = QWidget()
             layout = QVBoxLayout(right)
             layout.setContentsMargins(0, 0, 0, 0)
@@ -527,6 +552,7 @@ def window(first=None, chat=None, title=None):
             QShortcut(QKeySequence("Ctrl+Shift+C"), self, self.copy_answer)
             QShortcut(QKeySequence("Esc"), self, self.escape)
 
+            self.show_model()
             self.stream = Stream()
             self.stream.piece.connect(self.on_piece)
             self.stream.done.connect(self.on_done)
@@ -551,6 +577,24 @@ def window(first=None, chat=None, title=None):
             if SAVE:
                 self.list.setVisible(not self.list.isVisible())
 
+        def show_model(self):
+            """The menu and the title show the model of this chat (also one not in ASK_MODELS)."""
+            if self.models:
+                if self.models.findText(self.chat.model) < 0:
+                    self.models.clear()
+                    self.models.addItems(list(dict.fromkeys([*MODELS, self.chat.model])))
+                self.models.setCurrentText(self.chat.model)
+            if not self.title:
+                self.setWindowTitle(f"ask — {self.chat.model}")
+
+        def pick_model(self, model):
+            if self.busy or model == self.chat.model:
+                return self.show_model()
+            self.chat.model = model
+            self.show_model()
+            self.status.setText(f"next answer by {model}")
+            self.input.setFocus()
+
         def open_chat(self, item):
             if self.busy:
                 return
@@ -562,6 +606,7 @@ def window(first=None, chat=None, title=None):
                 return
             self.error = ""
             self.status.setText("")
+            self.show_model()
             self.render(follow=True)
             self.input.setFocus()
 
@@ -634,7 +679,12 @@ def window(first=None, chat=None, title=None):
             self.stop.clear()
             self.cancel = llm.Cancel()
             self.button.setText("Stop")
-            self.status.setText("thinking…")
+            switching = self.last_model and self.chat.model != self.last_model
+            # FastFlowLM loads one model at a time: a switch takes a few seconds more
+            self.status.setText(f"loading {self.chat.model}…" if switching else "thinking…")
+            self.last_model = self.chat.model
+            if self.models:
+                self.models.setEnabled(False)
             self.worker = threading.Thread(target=self.work, args=(question,), daemon=True)
             self.worker.start()
             self.render(follow=True)
@@ -666,6 +716,8 @@ def window(first=None, chat=None, title=None):
 
         def on_done(self, result):
             self.busy = False
+            if self.models:
+                self.models.setEnabled(True)
             self.error = "" if result == "stopped" else result
             self.button.setText("Send")
             self.status.setText(result if result == "stopped" else "")
@@ -676,7 +728,9 @@ def window(first=None, chat=None, title=None):
         def new_chat(self):
             if self.busy:
                 return
-            self.chat, self.error = Chat(save=True), ""
+            # a new chat keeps the model picked in the menu; without the menu, ASK_MODEL
+            self.chat, self.error = Chat(save=True, model=self.chat.model if self.models else None), ""
+            self.show_model()
             self.list.clearSelection()
             self.status.setText("new chat")
             self.render()

@@ -261,6 +261,58 @@ class Verbatim(unittest.TestCase):
             self.assertEqual(shown, self.TEXT.split("\n"), f"prefix {prefix!r}")
 
 
+class AskModels(unittest.TestCase):
+    """ASK_MODELS: the model is chosen per chat, and kept with it."""
+
+    def setUp(self):
+        self.real = ask.MODELS, ask.SAVE_DIR, ask.SAVE
+        self.dir = tempfile.TemporaryDirectory()
+        ask.MODELS, ask.SAVE_DIR, ask.SAVE = ["a:1b", "b:2b"], self.dir.name, True
+
+    def tearDown(self):
+        ask.MODELS, ask.SAVE_DIR, ask.SAVE = self.real
+        self.dir.cleanup()
+
+    def saved(self, model, kind=""):
+        chat = ask.Chat(save=True, model=model, kind=kind,
+                        turns=[{"role": "user", "content": "q"}, {"role": "assistant", "content": "a"}])
+        chat.write()
+        return ask.Chat.load(chat.path)
+
+    def test_a_picked_model_is_kept(self):
+        self.assertEqual(self.saved("b:2b").model, "b:2b")
+
+    def test_a_model_no_longer_offered_is_not(self):
+        self.assertEqual(self.saved("gone:7b").model, ask.MODEL)
+
+    def test_a_tool_chat_keeps_a_picked_model_too(self):
+        self.assertEqual(self.saved("b:2b", kind="eli12").model, "b:2b")
+        self.assertEqual(self.saved("gone:7b", kind="eli12").model, eli12.MODEL)
+
+    def test_terminal_model_command(self):
+        lines = iter(["/model", "/model b:2b", "/new"])
+        out, real_input, real_err = io.StringIO(), builtins.input, sys.stderr
+        chats = []
+        real_chat = ask.Chat
+
+        def read(prompt=""):
+            try:
+                return next(lines)
+            except StopIteration:
+                raise EOFError from None
+        def chat(*a, **k):
+            chats.append(real_chat(*a, **k))
+            return chats[-1]
+        builtins.input, sys.stderr, ask.Chat = read, out, chat
+        try:
+            ask.terminal(real_chat(model="a:1b"))
+        finally:
+            builtins.input, sys.stderr, ask.Chat = real_input, real_err, real_chat
+        self.assertIn("(model: a:1b; also: b:2b)", out.getvalue())
+        self.assertIn("(model: b:2b; also: a:1b)", out.getvalue())
+        self.assertEqual(chats[-1].model, "b:2b")  # /new keeps the picked model
+
+
 class Resume(unittest.TestCase):
     def test_saved_text_is_printed_plain(self):
         """A resumed chat holds copied text (uktr, eli12): no escape codes to the terminal."""
