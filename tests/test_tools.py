@@ -1,9 +1,11 @@
 """Tests for the logic that needs no LLM server. Run: python3 -m unittest discover -s tests"""
-import contextlib
 import io
 import os
+import socket
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from typing import ClassVar
 
@@ -71,14 +73,13 @@ class Chunks(unittest.TestCase):
 
 class Stream(unittest.TestCase):
     def stream(self, lines):
-        @contextlib.contextmanager
-        def fake(body, timeout):
-            yield io.BytesIO("".join(f"{line}\n" for line in lines).encode())
-        real, llm._request = llm._request, fake
+        def fake(body, timeout, cancel):
+            yield from io.BytesIO("".join(f"{line}\n" for line in lines).encode())
+        real, llm._stream_lines = llm._stream_lines, fake
         try:
             return "".join(llm.chat_stream([], "m"))
         finally:
-            llm._request = real
+            llm._stream_lines = real
 
     def test_pieces(self):
         self.assertEqual(self.stream([
@@ -90,6 +91,34 @@ class Stream(unittest.TestCase):
     def test_error_chunk(self):
         with self.assertRaises(llm.Error):
             self.stream(['data: {"error":{"message":"model not found"}}'])
+
+
+class Cancel(unittest.TestCase):
+    def test_cancel_while_waiting_for_the_first_word(self):
+        """A server that takes the request and does not answer yet (a model that is loading):
+        cancel() must stop the stream at once, not after the timeout."""
+        server = socket.socket()
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        conns = []
+        threading.Thread(target=lambda: conns.append(server.accept()), daemon=True).start()
+        real, llm.URL = llm.URL, f"http://127.0.0.1:{server.getsockname()[1]}/v1"
+        cancel, out = llm.Cancel(), []
+        try:
+            t = threading.Thread(target=lambda: out.extend(llm.chat_stream([], "m", cancel=cancel)))
+            start = time.monotonic()
+            t.start()
+            time.sleep(0.3)
+            cancel.cancel()
+            t.join(5)
+            self.assertFalse(t.is_alive(), "the stream did not stop")
+            self.assertLess(time.monotonic() - start, 2)
+            self.assertEqual(out, [])
+        finally:
+            llm.URL = real
+            server.close()
+            for conn, _ in conns:
+                conn.close()
 
 
 class Fixtext(unittest.TestCase):

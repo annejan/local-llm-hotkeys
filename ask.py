@@ -130,13 +130,14 @@ class Chat:
             keep.insert(0, turn)
         return [{"role": "system", "content": RULES.format(system=system(), today=today)}, *keep]
 
-    def ask(self, question):
+    def ask(self, question, cancel=None):
         """Yield the answer in pieces. The answer goes into the history when the stream ends,
-        also when it is stopped or fails, so a follow-up question still has the context."""
+        also when it is stopped or fails, so a follow-up question still has the context.
+        cancel: an llm.Cancel, to stop the answer from another thread."""
         self.turns.append({"role": "user", "content": question})
         answer = ""
         try:
-            for piece in llm.chat_stream(self.messages(), MODEL):
+            for piece in llm.chat_stream(self.messages(), MODEL, cancel=cancel):
                 answer += piece
                 yield piece
         finally:
@@ -460,7 +461,7 @@ def window(first=None):
         def send(self, question=None):
             """Send the input box, or a given question (text, or a list with a screenshot)."""
             if self.busy:
-                return self.stop.set()
+                return self.stop_answer()
             if not question:
                 question = self.input.toPlainText().strip()
                 if not question:
@@ -468,19 +469,22 @@ def window(first=None):
                 self.input.clear()
             self.busy, self.answer, self.error = True, "", ""
             self.stop.clear()
+            self.cancel = llm.Cancel()
             self.button.setText("Stop")
             self.status.setText("thinking…")
             threading.Thread(target=self.work, args=(question,), daemon=True).start()
             self.render(follow=True)
 
         def work(self, question):
-            answer, result = self.chat.ask(question), ""
+            answer, result = self.chat.ask(question, self.cancel), ""
             try:
                 for piece in answer:
                     if self.stop.is_set():
                         result = "stopped"
                         break
                     self.stream.piece.emit(piece)
+                if self.stop.is_set():
+                    result = "stopped"  # stopped before the first word came
             except Exception as e:  # anything, or the window stays busy forever
                 result = f"ask failed: {type(e).__name__}: {e}"
             finally:
@@ -521,9 +525,14 @@ def window(first=None):
                 llm.copy(last)  # wl-copy keeps it on the clipboard after this window closes
                 self.status.setText("answer copied")
 
+        def stop_answer(self):
+            """Stop now: also while the model is still loading or before the first word."""
+            self.stop.set()
+            self.cancel.cancel()
+
         def escape(self):
             if self.busy:
-                self.stop.set()
+                self.stop_answer()
             else:
                 self.close()
 

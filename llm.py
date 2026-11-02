@@ -4,11 +4,14 @@ Config: ~/.config/uktr/config (KEY=value lines, # comments), overridden by envir
 variables that start with UKTR_, ELI12_, FIX_, ASK_ or DICTATE_.
 """
 import contextlib
+import http.client
 import json
 import os
+import socket
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 import urllib.request
 
 CONFIG = os.path.expanduser("~/.config/uktr/config")
@@ -99,22 +102,62 @@ def complete(system, text, model, temperature=0.2):
                 model, temperature)
 
 
-def chat_stream(messages, model, temperature=0.5, timeout=600):
-    """Yield the reply in pieces, as the model writes it."""
-    with _request(_body(messages, model, temperature, True), timeout) as r:
-        for line in r:
-            line = line.decode("utf-8", "replace").strip()
-            if not line.startswith("data:"):
-                continue
-            data = line[5:].strip()
-            if data == "[DONE]":
-                return
-            chunk = json.loads(data)
-            if "error" in chunk:
-                raise Error(f"server error: {chunk['error']}")
-            piece = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content")
-            if piece:
-                yield piece
+class Cancel:
+    """Stops a chat_stream() from another thread at once, also while it still waits for the
+    first word (the model may be loading). Pass it to chat_stream(), then call cancel()."""
+
+    def __init__(self):
+        self.cancelled, self.sock = False, None
+
+    def cancel(self):
+        self.cancelled = True
+        if self.sock:
+            with contextlib.suppress(OSError):
+                self.sock.shutdown(socket.SHUT_RDWR)  # wakes up the thread that reads
+
+
+def _stream_lines(body, timeout, cancel):
+    """The lines of a streaming reply. With http.client instead of urllib, so the socket is
+    known before the server answers, and cancel() can shut it down."""
+    url = urllib.parse.urlsplit(URL + "/chat/completions")
+    kind = http.client.HTTPSConnection if url.scheme == "https" else http.client.HTTPConnection
+    conn = kind(url.hostname, url.port, timeout=timeout)
+    try:
+        conn.connect()
+        cancel.sock = conn.sock
+        if cancel.cancelled:
+            return
+        conn.request("POST", url.path, json.dumps(body).encode(),
+                     {"Content-Type": "application/json"})
+        r = conn.getresponse()
+        if r.status != 200:
+            raise Error(f"server error {r.status}: {r.read(300).decode('utf-8', 'replace')}")
+        yield from r
+    except (OSError, http.client.HTTPException):
+        if not cancel.cancelled:
+            raise
+    finally:
+        conn.close()
+
+
+def chat_stream(messages, model, temperature=0.5, timeout=600, cancel=None):
+    """Yield the reply in pieces, as the model writes it. cancel: a Cancel, to stop it."""
+    cancel = cancel or Cancel()
+    for line in _stream_lines(_body(messages, model, temperature, True), timeout, cancel):
+        if cancel.cancelled:
+            return
+        line = line.decode("utf-8", "replace").strip()
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            return
+        chunk = json.loads(data)
+        if "error" in chunk:
+            raise Error(f"server error: {chunk['error']}")
+        piece = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content")
+        if piece:
+            yield piece
 
 
 def chunks(text, size=1500):
