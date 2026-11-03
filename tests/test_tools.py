@@ -5,6 +5,7 @@ import importlib.util
 import io
 import os
 import re
+import shutil
 import signal
 import socket
 import stat
@@ -35,11 +36,54 @@ class Config(unittest.TestCase):
             conf = llm.read_config(f.name, {"ASK_MODEL": "b:2b", "HOME": "/x", "UKTR_TO": "Dutch"})
         finally:
             os.unlink(f.name)
-        self.assertEqual(conf, {"UKTR_MODEL": "a:1b", "ELI12_LANG": "nl",
-                                "ASK_MODEL": "b:2b", "UKTR_TO": "Dutch"})
+        self.assertEqual(conf, {"UKTR_MODEL": "a:1b", "ELI12_LANG": "nl", "ASK_MODEL": "b:2b",
+                                "AIKEY_MODEL": "b:2b", "UKTR_TO": "Dutch"})
 
     def test_missing_file(self):
         self.assertEqual(llm.read_config("/nonexistent/config", {}), {})
+
+    def read(self, text, environ):
+        with tempfile.NamedTemporaryFile("w", suffix=".conf", delete=False) as f:
+            f.write(text)
+        try:
+            return llm.read_config(f.name, environ)
+        finally:
+            os.unlink(f.name)
+
+    def test_old_names_still_work(self):
+        conf = self.read("UKTR_URL=http://old/v1\nASK_MODELS=a,b\nUKTR_LANGUAGE=nl\n", {})
+        self.assertEqual((conf["HOTKEYS_URL"], conf["AIKEY_MODELS"], conf["HOTKEYS_LANGUAGE"]),
+                         ("http://old/v1", "a,b", "nl"))
+
+    def test_new_name_wins_in_the_same_place(self):
+        conf = self.read("UKTR_URL=http://old/v1\nHOTKEYS_URL=http://new/v1\n", {})
+        self.assertEqual(conf["HOTKEYS_URL"], "http://new/v1")
+
+    def test_environment_wins_over_the_file_whatever_the_name(self):
+        conf = self.read("HOTKEYS_URL=http://file/v1\n", {"UKTR_URL": "http://env/v1"})
+        self.assertEqual(conf["HOTKEYS_URL"], "http://env/v1")
+        conf = self.read("UKTR_URL=http://file/v1\n", {"HOTKEYS_URL": "http://env/v1"})
+        self.assertEqual(conf["HOTKEYS_URL"], "http://env/v1")
+
+    def test_new_prefixes_from_the_environment(self):
+        conf = llm.read_config("/nonexistent/config", {"HOTKEYS_LANGUAGE": "de", "AIKEY_HISTORY": "0", "HOME": "/x"})
+        self.assertEqual(conf, {"HOTKEYS_LANGUAGE": "de", "AIKEY_HISTORY": "0"})
+
+    def test_old_config_file_until_it_is_moved(self):
+        with tempfile.TemporaryDirectory() as d:
+            real = llm.CONFIG, llm.OLD_CONFIG
+            llm.CONFIG, llm.OLD_CONFIG = os.path.join(d, "new", "config"), os.path.join(d, "old", "config")
+            try:
+                os.makedirs(os.path.join(d, "old"))
+                with open(llm.OLD_CONFIG, "w") as f:
+                    f.write("UKTR_URL=http://old/v1\n")
+                self.assertEqual(llm.read_config(environ={})["HOTKEYS_URL"], "http://old/v1")
+                os.makedirs(os.path.join(d, "new"))
+                with open(llm.CONFIG, "w") as f:
+                    f.write("HOTKEYS_URL=http://new/v1\n")
+                self.assertEqual(llm.read_config(environ={})["HOTKEYS_URL"], "http://new/v1")  # not both
+            finally:
+                llm.CONFIG, llm.OLD_CONFIG = real
 
 
 class Language(unittest.TestCase):
@@ -51,7 +95,7 @@ class Language(unittest.TestCase):
         self.assertEqual(llm.parse_language("Klingon"), ("klingon", "Klingon"))
 
     def test_from_desktop(self):
-        real = llm.conf.pop("UKTR_LANGUAGE", None)
+        real = llm.conf.pop("HOTKEYS_LANGUAGE", None)
         try:
             # The interface language counts, not the formats (LC_TIME and so on).
             self.assertEqual(llm.language({"LANG": "en_US.UTF-8", "LC_TIME": "nl_NL.UTF-8"}),
@@ -59,12 +103,12 @@ class Language(unittest.TestCase):
             self.assertEqual(llm.language({"LANGUAGE": "de:en", "LANG": "en_US.UTF-8"}),
                              ("de", "German"))
             self.assertEqual(llm.language({"LANG": "C.UTF-8"}), ("en", "English"))
-            llm.conf["UKTR_LANGUAGE"] = "Dutch"
+            llm.conf["HOTKEYS_LANGUAGE"] = "Dutch"
             self.assertEqual(llm.language({"LANG": "en_US.UTF-8"}), ("nl", "Dutch"))
         finally:
-            llm.conf.pop("UKTR_LANGUAGE", None)
+            llm.conf.pop("HOTKEYS_LANGUAGE", None)
             if real is not None:
-                llm.conf["UKTR_LANGUAGE"] = real
+                llm.conf["HOTKEYS_LANGUAGE"] = real
 
 
 class Chunks(unittest.TestCase):
@@ -263,13 +307,13 @@ class Verbatim(unittest.TestCase):
 
 
 class AskModels(unittest.TestCase):
-    """ASK_MODELS: the model is chosen per chat, and kept with it; off with fewer than two."""
+    """AIKEY_MODELS: the model is chosen per chat, and kept with it; off with fewer than two."""
 
     def setUp(self):
         self.real = ask.MODELS, ask.SAVE_DIR, ask.SAVE, eli12.MODEL
         self.dir = tempfile.TemporaryDirectory()
         ask.MODELS, ask.SAVE_DIR, ask.SAVE = ["a:1b", "b:2b"], self.dir.name, True
-        eli12.MODEL = "e:3b"  # not ASK_MODEL, so a fallback to the wrong one shows
+        eli12.MODEL = "e:3b"  # not AIKEY_MODEL, so a fallback to the wrong one shows
 
     def tearDown(self):
         ask.MODELS, ask.SAVE_DIR, ask.SAVE, eli12.MODEL = self.real
@@ -323,14 +367,14 @@ class AskModels(unittest.TestCase):
         self.assertEqual(made[-1].model, "b:2b")  # /new takes the picked model
 
     def test_terminal_new_after_a_tool_chat(self):
-        """A resumed eli12 chat answers with the eli12 model; /new is a plain chat: ASK_MODEL."""
+        """A resumed eli12 chat answers with the eli12 model; /new is a plain chat: AIKEY_MODEL."""
         _, made = self.terminal(["/new"], ask.Chat(model="e:3b", kind="eli12"))
         self.assertEqual(made[-1].model, ask.MODEL)
 
     def test_terminal_without_ask_models(self):
         ask.MODELS = []
         out, made = self.terminal(["/model b:2b", "/new"], ask.Chat())
-        self.assertIn("ASK_MODELS", out)
+        self.assertIn("AIKEY_MODELS", out)
         self.assertNotIn("/model NAME", out.split("\n")[0])
         self.assertEqual(made[-1].model, ask.MODEL)
 
@@ -408,7 +452,7 @@ class WindowModels(unittest.TestCase):
         self.assertIn("b:2b", w.windowTitle())
 
     def test_new_chat_after_a_tool_chat(self):
-        """An eli12 chat has its own model; a new chat from it, with nothing picked, has ASK_MODEL."""
+        """An eli12 chat has its own model; a new chat from it, with nothing picked, has AIKEY_MODEL."""
         chat = ask.Chat(save=True, model="e:3b", kind="eli12")
         w = self.window(["a:1b", "b:2b"], chat)
         self.assertEqual(w.models.currentText(), "e:3b")
@@ -441,6 +485,75 @@ class mock_confirm:
 
     def __exit__(self, *exc):
         self.QMessageBox.exec = self.real
+
+
+@unittest.skipUnless(shutil.which("bash"), "needs bash")
+class InstallMigration(unittest.TestCase):
+    """install.sh moves what 0.4 renamed: the config, the saved chats, and the ask command."""
+    REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def install(self, home):
+        env = {"HOME": home, "PATH": f"{home}/.local/bin:/usr/bin:/bin", "LANG": "C.UTF-8",
+               "XDG_CONFIG_HOME": f"{home}/.config", "XDG_DATA_HOME": f"{home}/.local/share",
+               "XDG_CACHE_HOME": f"{home}/.cache"}
+        r = subprocess.run(["bash", os.path.join(self.REPO, "install.sh")], env=env, capture_output=True,
+                           text=True, timeout=120)
+        return re.sub(r"\x1b\[[0-9;]*m", "", r.stdout + r.stderr)
+
+    def test_moves_config_chats_and_command(self):
+        with tempfile.TemporaryDirectory() as home:
+            os.makedirs(f"{home}/.config/uktr")
+            with open(f"{home}/.config/uktr/config", "w") as f:
+                f.write("UKTR_URL=http://old/v1\n")
+            os.makedirs(f"{home}/.local/share/uktr/ask")
+            with open(f"{home}/.local/share/uktr/ask/2026-01-01_120000.json", "w") as f:
+                f.write("{}")
+            os.makedirs(f"{home}/.local/bin")
+            os.symlink(os.path.join(self.REPO, "ask.py"), f"{home}/.local/bin/ask")
+            out = self.install(home)
+            chats = f"{home}/.local/share/local-llm-hotkeys/chats"
+            with open(f"{home}/.config/local-llm-hotkeys/config") as f:
+                self.assertEqual(f.read(), "UKTR_URL=http://old/v1\n")  # moved, not rewritten
+            self.assertFalse(os.path.exists(f"{home}/.config/uktr"))
+            self.assertTrue(os.path.exists(f"{chats}/2026-01-01_120000.json"))
+            self.assertEqual(stat.S_IMODE(os.stat(chats).st_mode), 0o700)
+            self.assertFalse(os.path.exists(f"{home}/.local/share/uktr"))
+            self.assertEqual(os.path.realpath(f"{home}/.local/bin/aikey"), os.path.join(self.REPO, "ask.py"))
+            self.assertFalse(os.path.lexists(f"{home}/.local/bin/ask"))
+            for line in ("moved your config", "moved your saved chats", "the chat command is aikey now",
+                         "names from before 0.4"):
+                self.assertIn(line, out)
+            again = self.install(home)  # a second run changes nothing
+            self.assertIn("exists (not changed)", again)
+            self.assertNotIn("moved your", again)
+
+    def test_keeps_what_is_not_ours(self):
+        with tempfile.TemporaryDirectory() as home:
+            for d in (".config/uktr", ".config/local-llm-hotkeys", ".local/bin"):
+                os.makedirs(f"{home}/{d}")
+            for d in ("uktr", "local-llm-hotkeys"):
+                with open(f"{home}/.config/{d}/config", "w") as f:
+                    f.write(f"# {d}\n")
+            os.symlink("/usr/bin/true", f"{home}/.local/bin/ask")  # someone else's ask
+            out = self.install(home)
+            with open(f"{home}/.config/local-llm-hotkeys/config") as f:
+                self.assertEqual(f.read(), "# local-llm-hotkeys\n")  # the new one is never overwritten
+            self.assertTrue(os.path.exists(f"{home}/.config/uktr/config"))
+            self.assertIn("is not read any more", out)
+            self.assertEqual(os.readlink(f"{home}/.local/bin/ask"), "/usr/bin/true")
+
+
+class ChatsFolder(unittest.TestCase):
+    """0.4 moved the chats from uktr/ask to local-llm-hotkeys/chats; install.sh moves them."""
+
+    def test_old_folder_until_it_is_moved(self):
+        with tempfile.TemporaryDirectory() as d:
+            new, old = os.path.join(d, "local-llm-hotkeys", "chats"), os.path.join(d, "uktr", "ask")
+            self.assertEqual(ask.chats_folder(d), new)  # neither: the new one
+            os.makedirs(old)
+            self.assertEqual(ask.chats_folder(d), old)  # only the old one: keep using it
+            os.makedirs(new)
+            self.assertEqual(ask.chats_folder(d), new)  # moved, or both: the new one
 
 
 class Resume(unittest.TestCase):
@@ -484,7 +597,7 @@ class CanWindow(unittest.TestCase):
 
 
 class UktrWindow(unittest.TestCase):
-    """uktr in the ask window: the translation streams part by part; questions go to ASK_MODEL."""
+    """uktr in the chat window: the translation streams part by part; questions go to AIKEY_MODEL."""
 
     def fake(self, sent):
         def stream(messages, model, temperature=0.5, timeout=600, cancel=None):
@@ -607,7 +720,7 @@ class ModelPerUse(unittest.TestCase):
 
 
 class Eli12Chat(unittest.TestCase):
-    """eli12 in the ask window: its rules and clean() for the first answer, ask's after that."""
+    """eli12 in the chat window: its rules and clean() for the first answer, ask's after that."""
 
     def chat(self):
         return ask.Chat(model="m-eli12", kind="eli12", first=ask.First(rules="ELI12 RULES", clean=eli12.clean),

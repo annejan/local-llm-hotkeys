@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=ask: chat with the local LLM
+Name=aikey: chat with the local LLM
 Comment=Chat with the local LLM; follow-up questions keep the conversation
-Exec=ask --popup
+Exec=aikey --popup
 Icon=local-llm-hotkeys
 Categories=Utility;
 X-KDE-Shortcuts=Meta+Shift+Q,Meta+Shift+F23,Meta+Shift+Touchpad Off

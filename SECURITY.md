@@ -33,15 +33,16 @@ Release files are attested by GitHub and `SHA256SUMS` is signed with the key abo
   The RemoteDesktop portal is not used instead: a script cannot identify itself to it, so after
   one "Allow" the saved permission is open to every program of the user, and asking at every
   dictation would take the focus from the window that the text is for.
-- Saved `ask` chats, including screenshots, are plain JSON files in `~/.local/share/uktr/ask/`.
-  Set `ASK_HISTORY=0` to save nothing.
+- Saved `aikey` chats, including screenshots, are plain JSON files in
+  `~/.local/share/local-llm-hotkeys/chats/`, readable only by you.
+  Set `AIKEY_HISTORY=0` to save nothing.
 - Text, documents, screenshots and audio can come from someone else, and the model can follow
-  instructions that are hidden in them. Its output is never run. A link in an `ask` answer opens
+  instructions that are hidden in them. Its output is never run. A link in an `aikey` answer opens
   only after you confirm the full address, and control characters are removed before text is
   printed or pasted. An explanation or translation can still be wrong on purpose.
 - `uktr FILE` and `eli12 FILE` read the file that a link points to. A downloaded archive
   can hold `report.txt -> ~/.ssh/id_ed25519`; "Translate (uktr)" then sends that key to the
   (local) model and writes the result next to the link. Look before you translate a folder
   from someone else.
-- Text and screenshots go to the server in `UKTR_URL`. If you point that to a remote server,
+- Text and screenshots go to the server in `HOTKEYS_URL`. If you point that to a remote server,
   your clipboard and screenshots go there.

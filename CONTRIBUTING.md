@@ -22,7 +22,7 @@ it shows how often a hidden instruction in a text steers eli12 and uktr. See the
 
 ## Guidelines
 
-- Python standard library only; PySide6 only in the `ask` window.
+- Python standard library only; PySide6 only in the `aikey` window (`ask.py`).
 - Code shared by the tools goes in `llm.py`.
 - Default to the NPU (FastFlowLM) and to the user's language.
 - Errors from a hotkey must show as a notification (`llm.errors`), never only on stderr.

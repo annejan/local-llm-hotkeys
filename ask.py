@@ -1,29 +1,31 @@
 #!/usr/bin/env python3
-"""ask: chat with the local LLM. The conversation keeps its history until you start a new one.
+"""aikey: chat with the local LLM. The conversation keeps its history until you start a new one.
 
-  ask --popup           chat window (KDE hotkey Meta+Shift+Q or Copilot; needs PySide6)
-  ask --screen          screenshot of the active window -> chat window that explains it
+  aikey --popup         chat window (KDE hotkey Meta+Shift+Q or Copilot; needs PySide6)
+  aikey --screen        screenshot of the active window -> chat window that explains it
                         (Ctrl+Alt+Copilot or Meta+Shift+W); ask follow-up questions about it
-  ask --region          the same for a screen region that you select (Meta+Shift+X)
-  ask                   chat in the terminal (/new starts a new chat, Ctrl+D or /quit quits)
-  ask --list            saved chats, newest first
-  ask --resume [N]      continue saved chat N in the terminal (default 1, the newest)
-  ask QUESTION...       one question on the command line -> stdout
-  ask < question        stdin -> stdout
+  aikey --region        the same for a screen region that you select (Meta+Shift+X)
+  aikey                 chat in the terminal (/new starts a new chat, Ctrl+D or /quit quits)
+  aikey --list          saved chats, newest first
+  aikey --resume [N]    continue saved chat N in the terminal (default 1, the newest)
+  aikey QUESTION...     one question on the command line -> stdout
+  aikey < question      stdin -> stdout
 
 Window keys: Enter sends, Shift+Enter is a new line, Esc stops an answer or closes the
 window, Ctrl+N starts a new chat, Ctrl+H shows or hides the saved chats, Ctrl+Shift+C copies
 the last answer. Click a saved chat to continue it; right-click or Del removes it.
 
 Chats from the window and the terminal chat are saved after every answer, as JSON in
-~/.local/share/uktr/ask/. One-shot questions (ask QUESTION, ask < question) are not saved.
+~/.local/share/local-llm-hotkeys/chats/. One-shot questions (aikey QUESTION, aikey < question)
+are not saved.
 
-Uses the same backend and config file as uktr (~/.config/uktr/config, UKTR_URL).
-  ASK_MODEL     default qwen3.5:9b (any chat model)
-  ASK_MODELS    models to choose from in the window, such as qwen3.5:9b,gemma4-it:e4b,gpt-oss:20b;
+Uses the shared config file (~/.config/local-llm-hotkeys/config, HOTKEYS_URL).
+  AIKEY_MODEL   default qwen3.5:9b (any chat model)
+  AIKEY_MODELS  models to choose from in the window, such as qwen3.5:9b,gemma4-it:e4b,gpt-oss:20b;
                 with two or more, a menu picks the model per chat (/model in the terminal)
-  ASK_HISTORY   default 1; 0 = do not save chats
-  ASK_SCREEN_PROMPT  the first question for --screen ({language} = your language)
+  AIKEY_HISTORY default 1; 0 = do not save chats
+  AIKEY_SCREEN_PROMPT  the first question for --screen ({language} = your language)
+  (before 0.4 these were ASK_MODEL, ASK_MODELS ...; those names still work)
 """
 import base64
 import contextlib
@@ -42,21 +44,29 @@ import threading
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 import llm
 
-MODEL = llm.conf.get("ASK_MODEL", "qwen3.5:9b")
-# Models to choose from (ASK_MODELS=a,b,c). Not the server's list: FastFlowLM lists every model it
+MODEL = llm.conf.get("AIKEY_MODEL", "qwen3.5:9b")
+# Models to choose from (AIKEY_MODELS=a,b,c). Not the server's list: FastFlowLM lists every model it
 # knows, also the ones that are not downloaded, and does not say which can chat or read images.
-MODELS = list(dict.fromkeys(m.strip() for m in llm.conf.get("ASK_MODELS", "").split(",") if m.strip()))
+MODELS = list(dict.fromkeys(m.strip() for m in llm.conf.get("AIKEY_MODELS", "").split(",") if m.strip()))
 
 
 def choosing():
-    """Choosing the model per chat is on: ASK_MODELS names two or more. Off, nothing changes."""
+    """Choosing the model per chat is on: AIKEY_MODELS names two or more. Off, nothing changes."""
     return len(MODELS) >= 2
 HISTORY_CHARS = 24000  # older turns are dropped so the prompt stays inside the context window
-SAVE = llm.conf.get("ASK_HISTORY", "1") != "0"
-SAVE_DIR = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
-                        "uktr", "ask")
+SAVE = llm.conf.get("AIKEY_HISTORY", "1") != "0"
 
-SCREEN_PROMPT = llm.conf.get("ASK_SCREEN_PROMPT", (
+
+def chats_folder(data_home):
+    """Where the chats are saved. Before 0.4 that was uktr/ask; until install.sh has moved
+    that folder, it is used as it is."""
+    new, old = os.path.join(data_home, "local-llm-hotkeys", "chats"), os.path.join(data_home, "uktr", "ask")
+    return old if os.path.isdir(old) and not os.path.isdir(new) else new
+
+
+SAVE_DIR = chats_folder(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"))
+
+SCREEN_PROMPT = llm.conf.get("AIKEY_SCREEN_PROMPT", (
     "What is on this screen? Say briefly what it shows and what matters. If there is an error, "
     "a question or a choice to make, explain it and say what to do. Answer in {language}."))
 IMAGE_SIZE = 1280  # longest side in pixels; bigger is slower and does not read better
@@ -351,7 +361,7 @@ def terminal(chat=None):
     import readline  # noqa: F401  (line editing and arrow-up history for input())
     chat = chat or Chat(save=True)
     picked = None  # the model picked with /model: new chats take it, not a resumed chat's model
-    print(f"ask {chat.model}: /new starts a new chat, {'/model NAME picks a model, ' if choosing() else ''}"
+    print(f"aikey {chat.model}: /new starts a new chat, {'/model NAME picks a model, ' if choosing() else ''}"
           "Ctrl+D or /quit quits.", file=sys.stderr)
     for t in chat.turns:  # a resumed chat: show it first
         # plain(): a saved question can be a copied text (uktr, eli12) with escape codes in it
@@ -375,7 +385,7 @@ def terminal(chat=None):
             print("(new chat)", file=sys.stderr)
             continue
         if question.split()[0] == "/model" and not choosing():
-            print("(to choose the model per chat, list two or more in ASK_MODELS)", file=sys.stderr)
+            print("(to choose the model per chat, list two or more in AIKEY_MODELS)", file=sys.stderr)
             continue
         if question.split()[0] == "/model":
             name = question[len("/model"):].strip()
@@ -391,7 +401,7 @@ def terminal(chat=None):
         except KeyboardInterrupt:
             print(" [stopped]", end="")
         except Exception as e:
-            print(f"[ask failed: {type(e).__name__}: {e}]", end="")
+            print(f"[aikey failed: {type(e).__name__}: {e}]", end="")
         finally:
             answer.close()
         print()
@@ -451,7 +461,7 @@ def window(first=None, chat=None, title=None):
 
     def confirm(parent, text):
         """Yes or No. Plain text: a chat title or a link must not show as rich text."""
-        box = QMessageBox(QMessageBox.Question, "ask", text, QMessageBox.Yes | QMessageBox.No, parent)
+        box = QMessageBox(QMessageBox.Question, "aikey", text, QMessageBox.Yes | QMessageBox.No, parent)
         box.setTextFormat(Qt.PlainText)
         return box.exec() == QMessageBox.Yes
 
@@ -508,7 +518,7 @@ def window(first=None, chat=None, title=None):
             self.answer, self.error, self.render_due = "", "", False
             # picked: the model chosen in the menu, for new chats (a tool's chat has its own model)
             self.title, self.last_model, self.picked = title, None, None
-            self.setWindowTitle(title or f"ask — {self.chat.model}")
+            self.setWindowTitle(title or f"aikey — {self.chat.model}")
             self.resize(1000, 680)
 
             self.list = QListWidget()
@@ -596,7 +606,7 @@ def window(first=None, chat=None, title=None):
                     self.models.addItems(items)
                 self.models.setCurrentText(self.chat.model)
             if not self.title:
-                self.setWindowTitle(f"ask — {self.chat.model}")
+                self.setWindowTitle(f"aikey — {self.chat.model}")
 
         def pick_model(self, model):
             if self.busy or model == self.chat.model:
@@ -716,7 +726,7 @@ def window(first=None, chat=None, title=None):
                 if self.stop.is_set():
                     result = "stopped"  # stopped before the first word came
             except Exception as e:  # anything, or the window stays busy forever
-                result = f"ask failed: {type(e).__name__}: {e}"
+                result = f"aikey failed: {type(e).__name__}: {e}"
             finally:
                 # Closes the connection (the server stops generating) and puts the answer in the
                 # history. Only then report done, so the window shows the saved answer.
@@ -781,8 +791,10 @@ def window(first=None, chat=None, title=None):
                 self.close()
 
     app = QApplication.instance() or QApplication(sys.argv[:1])  # one already there: the tests
-    app.setApplicationName("ask")
-    app.setDesktopFileName("ask")  # Plasma takes the icon from ask.desktop; this one is for elsewhere
+    app.setApplicationName("aikey")
+    # The desktop file keeps its old name (ask.desktop), so KDE keeps a shortcut you changed;
+    # Plasma takes the icon from it.
+    app.setDesktopFileName("ask")
     app.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.realpath(__file__)),
                                          "kde", "icons", "local-llm-hotkeys.svg")))
     w = Window(first, chat, title)
@@ -799,7 +811,7 @@ def main(argv):
         return window()
     if argv in (["--screen"], ["--region"]):
         # Take the screenshot before our window opens and becomes the active window.
-        with llm.errors("ask", gui=True):
+        with llm.errors("aikey", gui=True):
             if argv == ["--region"]:
                 shot = screenshot(region=True)
                 if not shot:
@@ -818,17 +830,17 @@ def main(argv):
         try:
             n = int(argv[1]) if len(argv) > 1 else 1
         except ValueError:
-            sys.exit("usage: ask --resume [N]  (N from ask --list)")
+            sys.exit("usage: aikey --resume [N]  (N from aikey --list)")
         if not 1 <= n <= len(chats):
-            sys.exit(f"no saved chat {n} (see ask --list)")
+            sys.exit(f"no saved chat {n} (see aikey --list)")
         try:
             chat = Chat.load(chats[n - 1][0])
         except (OSError, ValueError) as e:
-            sys.exit(f"ask: {e}")
+            sys.exit(f"aikey: {e}")
         return terminal(chat)
     if not argv and sys.stdin.isatty():
         return terminal()
-    with llm.errors("ask", gui=False):
+    with llm.errors("aikey", gui=False):
         question = " ".join(argv) or sys.stdin.read()
         if not question.strip():
             raise llm.Error("no question")

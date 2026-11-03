@@ -2,20 +2,20 @@
 """uktr: rough translation of Ukrainian (or any language) to your language with a local LLM.
 
   uktr                  stdin -> stdout
-  uktr clip             clipboard -> popup window (result also copied to clipboard)
-  uktr shot             select screen region -> OCR -> popup
+  uktr clip             clipboard -> chat window (result also copied to clipboard)
+  uktr shot             select screen region -> OCR -> chat window
   uktr listen [--orig]  live subtitles: system audio -> Whisper -> translation (terminal)
   uktr FILE [-o OUT]    .pdf .epub .docx .odt .html .txt .md -> OUT (default FILE.<lang>.md)
   uktr --notify FILE    same, with notifications instead of terminal output (Dolphin menu)
 
-Backend is any OpenAI-compatible server, set in ~/.config/uktr/config or env:
-  UKTR_URL    default http://localhost:52625/v1 (FastFlowLM on the NPU; ollama: :11434/v1)
+Backend is any OpenAI-compatible server, set in ~/.config/local-llm-hotkeys/config or env:
+  HOTKEYS_URL default http://localhost:52625/v1 (FastFlowLM on the NPU; ollama: :11434/v1)
   UKTR_MODEL  default translategemma:4b
   UKTR_FILE_MODEL  translation model for FILE and --notify (default UKTR_MODEL): a document
               can wait for a slower, more careful model
-  UKTR_TO     target language, default your language (UKTR_LANGUAGE, else the desktop's)
+  UKTR_TO     target language, default your language (HOTKEYS_LANGUAGE, else the desktop's)
   UKTR_LISTEN_MODEL  translation model for `listen` (default UKTR_MODEL)
-  UKTR_WINDOW default 1: clip and shot open the ask window (the translation streams in, and
+  UKTR_WINDOW default 1: clip and shot open the chat window (the translation streams in, and
               you can ask about it); 0 = a plain text box (kdialog)
   UKTR_LANG   spoken language for `listen`, default uk ("" = Whisper guesses)
 """
@@ -60,8 +60,8 @@ def messages(text, model, to):
     return [{"role": "user", "content": PROMPT.format(to=name, code=code, text=text)}]
 
 
-# Added to ask's rules for questions after a translation in the window. Translation models
-# cannot chat, so those questions go to ASK_MODEL.
+# Added to aikey's rules for questions after a translation in the window. Translation models
+# cannot chat, so those questions go to AIKEY_MODEL.
 FOLLOW_UP = (f" The first user message is a text, and the first answer is its translation to {TO}. "
              "Answer questions about the text or the translation briefly, and quote the words that "
              "you explain.")
@@ -97,7 +97,7 @@ def translate_long(text, out, progress=False, model=None):
 
 
 def translate_window(text):
-    """The translation in the ask window: it streams in, Esc stops it, and you can ask about
+    """The translation in the chat window: it streams in, Esc stops it, and you can ask about
     it. When it is complete, it is also copied to the clipboard, as from the text box."""
     import ask
     first = ask.First(stream=lambda question, cancel: translate_stream(question, cancel), done=llm.copy)

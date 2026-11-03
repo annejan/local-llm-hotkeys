@@ -1,9 +1,11 @@
-# Copy to ~/.config/uktr/config. Environment variables with the same name override this file.
+# Copy to ~/.config/local-llm-hotkeys/config. Environment variables with the same name override
+# this file. Names from before 0.4 still work: UKTR_URL, UKTR_LANGUAGE, UKTR_ASR_URL and
+# UKTR_ASR_MODEL are now HOTKEYS_..., and ASK_... is now AIKEY_... (the ask command is aikey).
 # "#" starts a comment, also after a value, so a value cannot contain " #" (set such a value
 # as an environment variable instead).
 
 # NPU via FastFlowLM (systemctl --user start flm):
-UKTR_URL=http://localhost:52625/v1
+HOTKEYS_URL=http://localhost:52625/v1
 UKTR_MODEL=translategemma:4b
 # uktr listen: faster model so subtitles keep up
 UKTR_LISTEN_MODEL=hy-mt2-flash:1.8b
@@ -11,13 +13,13 @@ UKTR_LISTEN_MODEL=hy-mt2-flash:1.8b
 # keeps every line (qwen3.5:9b: about 1.5 times as slow as translategemma)
 #UKTR_FILE_MODEL=qwen3.5:9b
 
-# GPU via ollama (then also set ELI12_MODEL, FIX_MODEL and ASK_MODEL to a chat model you have):
-#UKTR_URL=http://localhost:11434/v1
+# GPU via ollama (then also set ELI12_MODEL, FIX_MODEL and AIKEY_MODEL to a chat model you have):
+#HOTKEYS_URL=http://localhost:11434/v1
 #UKTR_MODEL=gemma4:12b
 
 # Your language: translations and explanations are written in it.
 # Default: the language of the desktop (LANGUAGE, LC_ALL, LC_MESSAGES, LANG).
-#UKTR_LANGUAGE=Dutch
+#HOTKEYS_LANGUAGE=Dutch
 
 # uktr: target language, if not your language
 #UKTR_TO=English
@@ -30,26 +32,26 @@ UKTR_LISTEN_MODEL=hy-mt2-flash:1.8b
 
 # uktr listen: spoken language for Whisper ("" = auto-detect, unreliable on short chunks)
 #UKTR_LANG=uk
-#UKTR_ASR_URL=http://localhost:52625/v1
-#UKTR_ASR_MODEL=whisper-v3:turbo
+#HOTKEYS_ASR_URL=http://localhost:52625/v1
+#HOTKEYS_ASR_MODEL=whisper-v3:turbo
 #UKTR_LISTEN_MAX=12
 #UKTR_SILENCE=300
 
 # eli12: chat model that explains texts like you are 12 (translation models cannot)
 #ELI12_MODEL=qwen3.5:9b
-#ELI12_LANG=nl   # a code or name, or both (yours, then English); default UKTR_LANGUAGE
+#ELI12_LANG=nl   # a code or name, or both (yours, then English); default HOTKEYS_LANGUAGE
 #ELI12_SENTENCES=5   # longest explanation, in sentences
 #ELI12_WINDOW=0   # a plain text box instead of the chat window (no follow-up questions)
 
-# fixtext and ask: chat models
+# fixtext and aikey: chat models
 #FIX_MODEL=qwen3.5:9b
-#ASK_MODEL=qwen3.5:9b
-#ASK_MODELS=qwen3.5:9b,gemma4-it:e4b,gpt-oss:20b   # choose the model per chat (a menu in the window)
-#ASK_HISTORY=0   # do not save ask chats
-#ASK_SCREEN_PROMPT=What is on this screen? Answer in {language}.
+#AIKEY_MODEL=qwen3.5:9b
+#AIKEY_MODELS=qwen3.5:9b,gemma4-it:e4b,gpt-oss:20b   # choose the model per chat (a menu in the window)
+#AIKEY_HISTORY=0   # do not save aikey chats
+#AIKEY_SCREEN_PROMPT=What is on this screen? Answer in {language}.
 
 # dictate: speech to text in the active window
-#DICTATE_LANG=nl   # language you speak; default UKTR_LANGUAGE; empty = Whisper guesses
+#DICTATE_LANG=nl   # language you speak; default HOTKEYS_LANGUAGE; empty = Whisper guesses
 #DICTATE_SILENCE=150   # microphone level that counts as quiet
 #DICTATE_PAUSE=2   # seconds of quiet after speech that end a dictation
 #DICTATE_TO=English   # language that dictate --translate types
