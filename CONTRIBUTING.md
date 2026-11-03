@@ -27,6 +27,10 @@ it shows how often a hidden instruction in a text steers eli12 and uktr. See the
 - Default to the NPU (FastFlowLM) and to the user's language.
 - Errors from a hotkey must show as a notification (`llm.errors`), never only on stderr.
 - Keep the README in plain, short sentences.
+- Do not change `Exec=` of a hotkey `.desktop` file that users already have: a running Plasma
+  keeps the old command until the next login ([KDE bug 487941](https://bugs.kde.org/show_bug.cgi?id=487941)).
+  Give the file a new name instead, and let `install.sh` remove the old one (as for
+  `ask.desktop`, which became `aikey.desktop` in 0.4).
 
 ## Making a release
 

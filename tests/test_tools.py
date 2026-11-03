@@ -608,6 +608,46 @@ class InstallMigration(unittest.TestCase):
             self.assertEqual(os.readlink(f"{home}/.local/bin/aikey"), "/usr/bin/true")
             self.assertIn(f"{home}/.local/bin/ask kept", out)
 
+    def fake_kde(self, home):
+        """A KDE whose kbuildsycoca6 does nothing; returns the PATH for install()."""
+        self.write(f"{home}/fake-kde/kbuildsycoca6", "#!/bin/sh\n")
+        os.chmod(f"{home}/fake-kde/kbuildsycoca6", 0o755)
+        return f"{home}/fake-kde:{home}/.local/bin:/usr/bin:/bin"
+
+    def test_old_chat_hotkeys_make_way(self):
+        # 0.4 renamed ask*.desktop to aikey*.desktop: a running Plasma keeps the Exec= of a hotkey
+        # file that keeps its name until the next login (KDE bug 487941), a new name it takes at once.
+        with tempfile.TemporaryDirectory() as home:
+            apps = f"{home}/.local/share/applications"
+            self.write(f"{apps}/ask.desktop", "[Desktop Entry]\nName=ask: chat\nExec=ask --popup\n")  # 0.3
+            self.write(f"{apps}/ask-screen.desktop", "[Desktop Entry]\nExec=aikey --screen\n")  # 0.4 main
+            self.write(f"{apps}/ask-region.desktop", "[Desktop Entry]\nExec=someone-else\n")  # not ours
+            self.write(f"{home}/.config/kglobalshortcutsrc",
+                       "[services][ask.desktop]\n_launch=Meta+A\\tMeta+Shift+F23\n\n"  # changed by you
+                       "[services][ask-screen.desktop]\n"
+                       "_launch=Meta+Shift+W\\tMeta+Ctrl+Alt+Shift+F23\\tMeta+Ctrl+Alt+Shift+Touchpad Off\n")
+            out = self.install(home, PATH=self.fake_kde(home))
+            for new in ("aikey", "aikey-screen", "aikey-region"):
+                self.assertTrue(os.path.exists(f"{apps}/{new}.desktop"))
+            self.assertFalse(os.path.exists(f"{apps}/ask.desktop"))
+            self.assertFalse(os.path.exists(f"{apps}/ask-screen.desktop"))
+            with open(f"{apps}/ask-region.desktop") as f:
+                self.assertIn("someone-else", f.read())
+            self.assertIn("removed the old hotkey ask.desktop (it is aikey.desktop now)", out)
+            self.assertIn("you had set the keys of ask.desktop to Meta+A, Meta+Shift+F23", out)
+            self.assertNotIn("keys of ask-screen.desktop", out)  # the defaults: nothing to set again
+            self.assertNotIn("ask-region.desktop", out)
+            out = self.install(home, "--uninstall")
+            self.assertFalse(os.path.exists(f"{apps}/aikey.desktop"))
+            self.assertTrue(os.path.exists(f"{apps}/ask-region.desktop"))  # still not ours
+
+    def test_uninstall_removes_old_chat_hotkeys(self):
+        with tempfile.TemporaryDirectory() as home:
+            self.write(f"{home}/.local/share/applications/ask.desktop", "[Desktop Entry]\nExec=ask --popup\n")
+            out = self.install(home, "--uninstall")
+            self.assertFalse(os.path.exists(f"{home}/.local/share/applications/ask.desktop"))
+            self.assertIn("removed hotkey ask.desktop", out)
+
     def test_uninstall_names_what_it_keeps(self):
         with tempfile.TemporaryDirectory() as home:
             self.write(f"{home}/.config/uktr/config", "")
@@ -616,6 +656,14 @@ class InstallMigration(unittest.TestCase):
             self.assertIn(f"your config: {home}/.config/uktr/config", out)
             self.assertIn(f"your saved chats: {home}/.local/share/local-llm-hotkeys/chats/", out)
             self.assertNotIn(f"{home}/.config/local-llm-hotkeys", out)  # not there: not named
+
+
+class HotkeyFiles(unittest.TestCase):
+    def test_window_names_a_hotkey_file(self):
+        # Plasma takes the window icon from the desktop file the window names.
+        with open(os.path.join(InstallMigration.REPO, "ask.py"), encoding="utf-8") as f:
+            name = re.search(r'setDesktopFileName\("([^"]+)"\)', f.read()).group(1)
+        self.assertTrue(os.path.exists(os.path.join(InstallMigration.REPO, "kde", name + ".desktop")))
 
 
 class ChatsFolder(unittest.TestCase):

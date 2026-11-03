@@ -792,9 +792,8 @@ def window(first=None, chat=None, title=None):
 
     app = QApplication.instance() or QApplication(sys.argv[:1])  # one already there: the tests
     app.setApplicationName("aikey")
-    # The desktop file keeps its old name (ask.desktop), so KDE keeps a shortcut you changed;
-    # Plasma takes the icon from it.
-    app.setDesktopFileName("ask")
+    # Plasma takes the icon from the desktop file of the chat hotkey (aikey.desktop).
+    app.setDesktopFileName("aikey")
     app.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.realpath(__file__)),
                                          "kde", "icons", "local-llm-hotkeys.svg")))
     w = Window(first, chat, title)
