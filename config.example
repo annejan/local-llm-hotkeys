@@ -44,6 +44,7 @@ UKTR_LISTEN_MODEL=hy-mt2-flash:1.8b
 # fixtext and ask: chat models
 #FIX_MODEL=qwen3.5:9b
 #ASK_MODEL=qwen3.5:9b
+#ASK_MODELS=qwen3.5:9b,gemma4-it:e4b,gpt-oss:20b   # choose the model per chat (a menu in the window)
 #ASK_HISTORY=0   # do not save ask chats
 #ASK_SCREEN_PROMPT=What is on this screen? Answer in {language}.
 

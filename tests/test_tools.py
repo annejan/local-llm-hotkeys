@@ -1,5 +1,6 @@
 """Tests for the logic that needs no LLM server. Run: python3 -m unittest discover -s tests"""
 import builtins
+import contextlib
 import importlib.util
 import io
 import os
@@ -259,6 +260,187 @@ class Verbatim(unittest.TestCase):
             # and toPlainText() writes no-break spaces as spaces.
             shown = [b if b.strip() else "" for b in doc.toPlainText().split("\n")]
             self.assertEqual(shown, self.TEXT.split("\n"), f"prefix {prefix!r}")
+
+
+class AskModels(unittest.TestCase):
+    """ASK_MODELS: the model is chosen per chat, and kept with it; off with fewer than two."""
+
+    def setUp(self):
+        self.real = ask.MODELS, ask.SAVE_DIR, ask.SAVE, eli12.MODEL
+        self.dir = tempfile.TemporaryDirectory()
+        ask.MODELS, ask.SAVE_DIR, ask.SAVE = ["a:1b", "b:2b"], self.dir.name, True
+        eli12.MODEL = "e:3b"  # not ASK_MODEL, so a fallback to the wrong one shows
+
+    def tearDown(self):
+        ask.MODELS, ask.SAVE_DIR, ask.SAVE, eli12.MODEL = self.real
+        self.dir.cleanup()
+
+    def saved(self, model, kind=""):
+        chat = ask.Chat(save=True, model=model, kind=kind,
+                        turns=[{"role": "user", "content": "q"}, {"role": "assistant", "content": "a"}])
+        chat.write()
+        return ask.Chat.load(chat.path)
+
+    def test_a_picked_model_is_kept(self):
+        self.assertEqual(self.saved("b:2b").model, "b:2b")
+
+    def test_a_model_no_longer_offered_is_not(self):
+        self.assertEqual(self.saved("gone:7b").model, ask.MODEL)
+
+    def test_a_tool_chat_keeps_its_own_model_unless_one_was_picked(self):
+        self.assertEqual(self.saved("b:2b", kind="eli12").model, "b:2b")
+        self.assertEqual(self.saved("gone:7b", kind="eli12").model, "e:3b")
+
+    def test_off_with_fewer_than_two(self):
+        ask.MODELS = ["b:2b"]
+        self.assertFalse(ask.choosing())
+        self.assertEqual(self.saved("b:2b").model, ask.MODEL)  # no restore: nothing changes
+
+    def terminal(self, lines, chat):
+        lines, out = iter(lines), io.StringIO()
+        made, real_input, real_err, real_chat = [], builtins.input, sys.stderr, ask.Chat
+
+        def read(prompt=""):
+            try:
+                return next(lines)
+            except StopIteration:
+                raise EOFError from None
+
+        def new_chat(*a, **k):
+            made.append(real_chat(*a, **k))
+            return made[-1]
+        builtins.input, sys.stderr, ask.Chat = read, out, new_chat
+        try:
+            ask.terminal(chat)  # only commands: nothing goes to a server
+        finally:
+            builtins.input, sys.stderr, ask.Chat = real_input, real_err, real_chat
+        return out.getvalue(), made
+
+    def test_terminal_model_command(self):
+        out, made = self.terminal(["/model", "/model b:2b", "/new"], ask.Chat(model="a:1b"))
+        self.assertIn("(model: a:1b; also: b:2b)", out)
+        self.assertIn("(model: b:2b; also: a:1b)", out)
+        self.assertEqual(made[-1].model, "b:2b")  # /new takes the picked model
+
+    def test_terminal_new_after_a_tool_chat(self):
+        """A resumed eli12 chat answers with the eli12 model; /new is a plain chat: ASK_MODEL."""
+        _, made = self.terminal(["/new"], ask.Chat(model="e:3b", kind="eli12"))
+        self.assertEqual(made[-1].model, ask.MODEL)
+
+    def test_terminal_without_ask_models(self):
+        ask.MODELS = []
+        out, made = self.terminal(["/model b:2b", "/new"], ask.Chat())
+        self.assertIn("ASK_MODELS", out)
+        self.assertNotIn("/model NAME", out.split("\n")[0])
+        self.assertEqual(made[-1].model, ask.MODEL)
+
+
+@unittest.skipUnless(ask.can_window(), "needs PySide6")
+class WindowModels(unittest.TestCase):
+    """The model menu in the window, offscreen, with a fake model stream."""
+
+    def setUp(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+        self.QApplication = QApplication
+        self.real = ask.MODELS, ask.SAVE_DIR, ask.SAVE, llm.chat_stream, QApplication.exec
+        self.dir = tempfile.TemporaryDirectory()
+        ask.SAVE_DIR, ask.SAVE = self.dir.name, True
+        self.used = []
+
+        def stream(messages, model, temperature=0.5, timeout=600, cancel=None):
+            self.used.append(model)
+            yield f"answer by {model}"
+        llm.chat_stream = stream
+        QApplication.exec = lambda app: 0
+
+    def tearDown(self):
+        ask.MODELS, ask.SAVE_DIR, ask.SAVE, llm.chat_stream, self.QApplication.exec = self.real
+        for w in self.QApplication.topLevelWidgets():
+            w.close()
+        self.dir.cleanup()
+
+    def window(self, models, chat=None):
+        ask.MODELS = models
+        with contextlib.suppress(SystemExit):
+            ask.window(chat=chat)
+        return [w for w in self.QApplication.topLevelWidgets() if hasattr(w, "view") and w.isVisible()][-1]
+
+    def ask(self, w, question):
+        w.input.setPlainText(question)
+        w.send()
+        status, enabled = w.status.text(), w.models.isEnabled() if w.models else None
+        end = time.time() + 3
+        while time.time() < end and (w.busy or w.chat.turns[-1]["role"] != "assistant"):
+            self.QApplication.processEvents()
+            time.sleep(0.01)
+        self.QApplication.processEvents()
+        return status, enabled
+
+    def pick(self, w, model):
+        w.models.setCurrentText(model)
+        w.models.activated.emit(w.models.currentIndex())
+
+    def test_no_menu_with_fewer_than_two(self):
+        self.assertIsNone(self.window(["a:1b"]).models)
+
+    def test_pick_new_chat_and_busy(self):
+        w = self.window(["a:1b", "b:2b"])
+        self.assertEqual(w.models.currentText(), ask.MODEL)
+        self.ask(w, "one")
+        self.pick(w, "b:2b")
+        status, enabled = self.ask(w, "two")
+        self.assertEqual(status, "loading b:2b…")
+        self.assertFalse(enabled, "the menu is locked while an answer comes in")
+        self.assertTrue(w.models.isEnabled())
+        self.assertEqual(self.used, [ask.MODEL, "b:2b"])
+        w.new_chat()
+        self.assertEqual((w.chat.model, w.models.currentText()), ("b:2b", "b:2b"))
+
+    def test_deleting_the_open_chat_keeps_the_pick(self):
+        w = self.window(["a:1b", "b:2b"])
+        self.pick(w, "b:2b")
+        self.ask(w, "one")
+        w.list.setCurrentRow(0)
+        with mock_confirm(True):
+            w.delete_chat()
+        self.assertEqual((w.chat.turns, w.chat.model, w.models.currentText()), ([], "b:2b", "b:2b"))
+        self.assertIn("b:2b", w.windowTitle())
+
+    def test_new_chat_after_a_tool_chat(self):
+        """An eli12 chat has its own model; a new chat from it, with nothing picked, has ASK_MODEL."""
+        chat = ask.Chat(save=True, model="e:3b", kind="eli12")
+        w = self.window(["a:1b", "b:2b"], chat)
+        self.assertEqual(w.models.currentText(), "e:3b")
+        w.new_chat()
+        self.assertEqual(w.chat.model, ask.MODEL)
+        self.assertEqual([w.models.itemText(i) for i in range(w.models.count())],
+                         list(dict.fromkeys(["a:1b", "b:2b", ask.MODEL])))  # e:3b is gone from it
+
+    def test_loading_after_a_translation(self):
+        """uktr's translation comes from its own model: the first question after it is a switch."""
+        def translation(question, cancel):
+            yield "vertaling"
+        chat = ask.Chat(save=True, kind="uktr", first=ask.First(stream=translation))
+        w = self.window(["a:1b", "b:2b"], chat)
+        self.ask(w, "tekst")
+        status, _ = self.ask(w, "wat betekent dat?")
+        self.assertEqual(status, f"loading {ask.MODEL}…")
+
+
+class mock_confirm:
+    """Answer the window's Yes/No question without showing it."""
+
+    def __init__(self, answer):
+        self.answer = answer
+
+    def __enter__(self):
+        from PySide6.QtWidgets import QMessageBox
+        self.real, self.QMessageBox = QMessageBox.exec, QMessageBox
+        QMessageBox.exec = lambda box: QMessageBox.Yes if self.answer else QMessageBox.No
+
+    def __exit__(self, *exc):
+        self.QMessageBox.exec = self.real
 
 
 class Resume(unittest.TestCase):
