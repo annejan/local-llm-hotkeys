@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=ask: explain a screen region
+Name=aikey: explain a screen region
 Comment=Select part of the screen; the local LLM explains it and you can ask follow-up questions
-Exec=ask --region
+Exec=aikey --region
 Icon=spectacle
 Categories=Utility;
 X-KDE-Shortcuts=Meta+Shift+X

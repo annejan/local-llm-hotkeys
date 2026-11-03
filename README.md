@@ -27,18 +27,18 @@ Some examples:
 - An error dialog, a settings page, a chart: press Ctrl+Alt+Copilot, then ask "and how do I
   fix that?"
 
-"Your language" is the language of your desktop, or the one you set (`UKTR_LANGUAGE`). No AI
+"Your language" is the language of your desktop, or the one you set (`HOTKEYS_LANGUAGE`). No AI
 key? Every action also has a Meta+Shift shortcut.
 
 ## Hotkeys
 
 | Key | Action |
 |---|---|
-| Copilot or Meta+Shift+Q | chat (`ask --popup`) |
+| Copilot or Meta+Shift+Q | chat (`aikey --popup`) |
 | Alt+Copilot or Meta+Shift+T | translate the clipboard to your language (`uktr clip`) |
 | Ctrl+Copilot or Meta+Shift+E | explain the clipboard (`eli12 clip`) |
-| Ctrl+Alt+Copilot or Meta+Shift+W | explain the active window (`ask --screen`) |
-| Meta+Shift+X | explain a screen region that you select (`ask --region`) |
+| Ctrl+Alt+Copilot or Meta+Shift+W | explain the active window (`aikey --screen`) |
+| Meta+Shift+X | explain a screen region that you select (`aikey --region`) |
 | Meta+Shift+Y | translate a screen region (`uktr shot`) |
 | Meta+Shift+F | fix spelling and grammar of the clipboard (`fixtext clip`) |
 | Meta+Shift+D | dictate: speak, and the text is typed into the active window (`dictate`) |
@@ -53,12 +53,12 @@ AltGr works as Alt. See [Install](#install) for the setup and [the Copilot key](
   clipboard, a screen region, documents, or live subtitles for audio.
 - **eli12**: explains a text like you are 12.
 - **fixtext**: fixes spelling and grammar of the clipboard.
-- **ask**: a chat window for quick questions and follow-ups, also about a screenshot.
+- **aikey**: a chat window for quick questions and follow-ups, also about a screenshot.
 - **dictate**: speak, and the text is typed into the active window.
 
 All of them talk to any OpenAI-compatible server. The default setup runs everything on the NPU
 with [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM); ollama on a GPU also works.
-Python standard library only, except the `ask` chat window, which uses PySide6.
+Python standard library only, except the `aikey` chat window, which uses PySide6.
 
 ## uktr: translate
 
@@ -74,18 +74,18 @@ rough, and some mistakes are funny.
 | `uktr --notify FILE` | same, with notifications (Dolphin menu) | `FILE.nl.md` |
 | `uktr listen [--orig]` | system audio (live) | subtitles in the terminal |
 
-The target language is your language (`UKTR_LANGUAGE`, else the desktop's). Set `UKTR_TO` to
+The target language is your language (`HOTKEYS_LANGUAGE`, else the desktop's). Set `UKTR_TO` to
 translate to another one. The output file gets the language code: `FILE.nl.md` for Dutch,
 `FILE.en.md` for English. Long text goes to the model in chunks of about 1500 characters,
 split at paragraph breaks.
 
-From the hotkeys, the translation opens in the `ask` chat window: it appears while the model
+From the hotkeys, the translation opens in the `aikey` chat window: it appears while the model
 writes it (the first words after about 2 s), part after part for a long text, and Esc stops
 it. The text shows exactly as it was written, line for line. When it is complete, it is also
 on the clipboard. Then ask about it ("what does this word mean?", "is this formal?"): those
-questions go to the chat model (`ASK_MODEL`), because a translation model cannot chat; the
+questions go to the chat model (`AIKEY_MODEL`), because a translation model cannot chat; the
 first one takes a few seconds more while FastFlowLM switches models. The chat is saved with
-the other `ask` chats (with a 🌐 title). Without PySide6, or with `UKTR_WINDOW=0`, the
+the other `aikey` chats (with a 🌐 title). Without PySide6, or with `UKTR_WINDOW=0`, the
 translation shows in a plain text box instead.
 
 ### `uktr listen`
@@ -129,10 +129,10 @@ document.
 It writes in your language. `-l LANG` picks another one (`-l en`, `-l German`), and `-l both`
 gives your language followed by English.
 
-From the hotkey or Dolphin, the explanation opens in the `ask` chat window: it appears while
+From the hotkey or Dolphin, the explanation opens in the `aikey` chat window: it appears while
 the model writes it (the first words after about 2 s), Esc stops it, and you can ask about the
 text: "what happens if I pay late?" The answers to those questions come only from the text;
-if the text does not say it, the answer says so. The chat is saved with the other `ask` chats
+if the text does not say it, the answer says so. The chat is saved with the other `aikey` chats
 (with a 💡 title). Without PySide6, with `-l both`, or with `ELI12_WINDOW=0`, the explanation
 shows in a plain text box instead.
 
@@ -175,7 +175,7 @@ The model sometimes answers a question in the text instead of fixing it. If a fi
 much shorter or longer than the original, `fixtext` keeps the original part. Model:
 `FIX_MODEL`, default `qwen3.5:9b`. Text over 20,000 characters is refused.
 
-## ask: chat
+## aikey: chat
 
 Meta+Shift+Q (or the Copilot key) opens a chat window. Type a question and press Enter; the
 answer streams in as the model writes it, with markdown (code blocks, lists). Ask follow-up
@@ -193,21 +193,21 @@ KDE Plasma 6.8 on Wayland"), so commands fit your system.
 
 | Command | Input | Output |
 |---|---|---|
-| `ask --popup` | chat window | chat window |
-| `ask --screen` | screenshot of the active window | chat window |
-| `ask --region` | screenshot of a region that you select | chat window |
-| `ask` | chat in the terminal (`/new` starts a new chat, Ctrl+D or `/quit` quits) | terminal |
-| `ask --list` | saved chats, newest first | stdout |
-| `ask --resume [N]` | continue saved chat N (default 1, the newest) | terminal |
-| `ask QUESTION...` | command line | stdout |
-| `ask < question` | stdin | stdout |
+| `aikey --popup` | chat window | chat window |
+| `aikey --screen` | screenshot of the active window | chat window |
+| `aikey --region` | screenshot of a region that you select | chat window |
+| `aikey` | chat in the terminal (`/new` starts a new chat, Ctrl+D or `/quit` quits) | terminal |
+| `aikey --list` | saved chats, newest first | stdout |
+| `aikey --resume [N]` | continue saved chat N (default 1, the newest) | terminal |
+| `aikey QUESTION...` | command line | stdout |
+| `aikey < question` | stdin | stdout |
 
-Model: `ASK_MODEL`, default `qwen3.5:9b`. The first words come after about 1 s. When a
+Model: `AIKEY_MODEL`, default `qwen3.5:9b`. The first words come after about 1 s. When a
 conversation gets longer than about 24,000 characters, the oldest messages are dropped. A 9B
 model makes mistakes, so check facts that matter.
 
-To choose the model per chat, list the ones you want in `ASK_MODELS`, for example
-`ASK_MODELS=qwen3.5:9b,gemma4-it:e4b,gpt-oss:20b`. With two or more, the window gets a menu
+To choose the model per chat, list the ones you want in `AIKEY_MODELS`, for example
+`AIKEY_MODELS=qwen3.5:9b,gemma4-it:e4b,gpt-oss:20b`. With two or more, the window gets a menu
 next to New chat; in the terminal, type `/model NAME`. The chat keeps its model when you open
 it again. FastFlowLM loads one model at a time, so the first answer after a switch takes a few
 seconds more. The list is yours to choose: the server also lists models that are not
@@ -217,16 +217,16 @@ more often than `qwen3.5:9b` and `gemma4-it:e4b`.
 
 ### Explain the active window or a region
 
-Ctrl+Alt+Copilot or Meta+Shift+W (`ask --screen`) takes a screenshot of the active window and
+Ctrl+Alt+Copilot or Meta+Shift+W (`aikey --screen`) takes a screenshot of the active window and
 opens the chat with it. The model says what is on the screen, and explains an error, a question or a choice
 if there is one. Then ask follow-up questions about it ("what does this setting do?").
 
-For one error message in a big window, press Meta+Shift+X (`ask --region`) instead and drag a
+For one error message in a big window, press Meta+Shift+X (`aikey --region`) instead and drag a
 rectangle around it. Press Esc to cancel.
 
 `qwen3.5:9b` reads images, so this is the same model as the chat: about 8 s for the first
 answer on the NPU. The screenshot is scaled to 1280 pixels and saved with the chat. Set
-`ASK_SCREEN_PROMPT` to change the first question. The answer is in your language.
+`AIKEY_SCREEN_PROMPT` to change the first question. The answer is in your language.
 
 A web page in the screenshot can tell the model to write a link that sends your chat to
 someone else. So a link in an answer opens only after the window shows you the full address
@@ -235,9 +235,10 @@ and you click Yes.
 ### Saved chats
 
 Every chat from the window or the terminal is saved after each answer, as a JSON file in
-`~/.local/share/uktr/ask/`. The window shows them on the left, newest first: click one to read
-it and ask more. Right-click or Del removes a chat (after a confirmation). One-shot questions
-(`ask QUESTION`, `ask < question`) are not saved. Set `ASK_HISTORY=0` to save nothing.
+`~/.local/share/local-llm-hotkeys/chats/`. The window shows them on the left, newest first:
+click one to read it and ask more. Right-click or Del removes a chat (after a confirmation).
+One-shot questions (`aikey QUESTION`, `aikey < question`) are not saved. Set `AIKEY_HISTORY=0`
+to save nothing.
 
 ## dictate: speak instead of type
 
@@ -251,7 +252,7 @@ that has the focus: a chat, an email, a terminal.
 | `dictate --print` | microphone | stdout |
 | `dictate --translate` | microphone | translated, typed into the active window (Meta+Ctrl+Shift+D) |
 
-You speak your language (`DICTATE_LANG`, default `UKTR_LANGUAGE`). The text is typed by
+You speak your language (`DICTATE_LANG`, default `HOTKEYS_LANGUAGE`). The text is typed by
 pasting: it goes on the clipboard and the primary selection, and a virtual keyboard presses
 Shift+Insert, which pastes in Qt and GTK apps, browsers and Konsole. The virtual keyboard
 needs write access to `/dev/uinput` (check with `test -w /dev/uinput && echo ok`). Without
@@ -297,8 +298,8 @@ sudo pacman -S --needed wl-clipboard kdialog libnotify spectacle pyside6 \
 | Package | Needed for |
 |---|---|
 | wl-clipboard, kdialog, libnotify | the hotkeys: clipboard, popup, notifications |
-| PySide6 | the `ask` window, also for `eli12` and `uktr` (without it, `ask` opens in Konsole, `eli12` and `uktr` in a text box) |
-| spectacle | `uktr shot`, `ask --screen` |
+| PySide6 | the `aikey` window, also for `eli12` and `uktr` (without it, `aikey` opens in Konsole, `eli12` and `uktr` in a text box) |
+| spectacle | `uktr shot`, `aikey --screen` |
 | tesseract with Ukrainian data | `uktr shot` (OCR) |
 | poppler (`pdftotext`), pandoc | PDF, and epub/docx/odt/html files |
 | pulseaudio-utils (`parec`) | `uktr listen`, `dictate` |
@@ -329,7 +330,7 @@ windows. So add the rule only if you want dictate to type for you. To remove it 
 `sudo rm /etc/udev/rules.d/60-local-llm-hotkeys-uinput.rules`, then the `udevadm` line above.
 
 Kubuntu 24.04 has Plasma 5 and no PySide6: the commands work, but the hotkeys are not tested
-there and `ask` opens in Konsole.
+there and `aikey` opens in Konsole.
 
 ### Install with the script
 
@@ -345,7 +346,9 @@ cd local-llm-hotkeys
   dnf or pacman), and the udev rule for `dictate` if it is needed,
 - links the commands into `~/.local/bin` (they point into this directory, so keep it where
   it is; after a `git pull` you have the new version at once),
-- creates `~/.config/uktr/config` if there is none, and shows your language,
+- creates `~/.config/local-llm-hotkeys/config` if there is none, and shows your language,
+- after an update from before 0.4: moves your config and saved chats out of the `uktr`
+  folders and removes the old `ask` command (see Configuration, "Renamed in 0.4"),
 - installs the KDE hotkeys, the Dolphin menu and the Copilot key map,
 - checks the model server and lists the models that are missing.
 
@@ -368,9 +371,10 @@ gpg --verify SHA256SUMS.asc SHA256SUMS   # key and fingerprint: see SECURITY.md
 ### Install by hand
 
 ```sh
-mkdir -p ~/.local/bin ~/.config/uktr
-for tool in uktr eli12 fixtext ask dictate; do ln -s "$PWD/$tool.py" ~/.local/bin/$tool; done
-cp config.example ~/.config/uktr/config
+mkdir -p ~/.local/bin ~/.config/local-llm-hotkeys
+for tool in uktr eli12 fixtext dictate; do ln -s "$PWD/$tool.py" ~/.local/bin/$tool; done
+ln -s "$PWD/ask.py" ~/.local/bin/aikey
+cp config.example ~/.config/local-llm-hotkeys/config
 cp kde/*.desktop ~/.local/share/applications/
 kbuildsycoca6
 mkdir -p ~/.local/share/kio/servicemenus
@@ -401,7 +405,7 @@ Upstream: Qt 6.13 knows `XF86Assistant` (`Qt::Key_Assistant`). KWin and the KDE 
 recorder still need a small change each before the key works without this override; see
 [KDE bug 502639](https://bugs.kde.org/show_bug.cgi?id=502639).
 
-Ctrl and Alt are free to add, so there are four combinations: Copilot (ask), Ctrl+Copilot
+Ctrl and Alt are free to add, so there are four combinations: Copilot (aikey), Ctrl+Copilot
 (eli12), Alt+Copilot (translate) and Ctrl+Alt+Copilot (explain the active window). AltGr
 works as Alt here.
 
@@ -431,7 +435,7 @@ openSUSE Tumbleweed, kernel 7.2+. Without such an NPU, use ollama (see [Models](
    flm pull translategemma:4b    # translation (uktr), ~4.5 GB
    flm pull hy-mt2-flash:1.8b    # fast translation (uktr listen), ~1.4 GB
    flm pull whisper-v3:turbo     # speech-to-text (uktr listen, dictate), ~0.6 GB
-   flm pull qwen3.5:9b           # chat and images (eli12, fixtext, ask)
+   flm pull qwen3.5:9b           # chat and images (eli12, fixtext, aikey)
    ```
 
 4. Install and start the server (OpenAI API on port 52625):
@@ -464,7 +468,7 @@ without an answer", and the fix is `systemctl --user restart flm`.
   (about 50 tokens/s output) and gives good results; the example config uses it for
   `listen`, where speed matters. uktr sends it the user-only prompt it was trained on when
   the model name contains `hy-mt`.
-- `qwen3.5:9b`: a chat model that also reads images. eli12, fixtext and ask use it.
+- `qwen3.5:9b`: a chat model that also reads images. eli12, fixtext and aikey use it.
 - FLM loads one language model at a time (Whisper stays loaded next to it), so the first
   request after a change of model (for example translate, then chat) takes about 5 s more.
   To avoid that, set `UKTR_MODEL=qwen3.5:9b`: one model for everything. Its translations are
@@ -478,43 +482,52 @@ without an answer", and the fix is `systemctl --user restart flm`.
   `dictate --translate`, where you wait for the text to appear, `DICTATE_MODEL=hy-mt2-flash:1.8b`.
 - With ollama, any chat model works for translation too (for example `gemma4:12b`); it gets
   the same instruction to output only the translation. Set `ELI12_MODEL`,
-  `FIX_MODEL` and `ASK_MODEL` to a chat model that you have.
+  `FIX_MODEL` and `AIKEY_MODEL` to a chat model that you have.
 
 ## Configuration
 
-`~/.config/uktr/config` holds `KEY=value` lines (`#` starts a comment). Environment variables
-with the same name override the file. See `config.example`.
+`~/.config/local-llm-hotkeys/config` holds `KEY=value` lines (`#` starts a comment).
+Environment variables with the same name override the file. See `config.example`.
+
+**Renamed in 0.4**, and the old names still work: the config moved from `~/.config/uktr/config`
+and the saved chats from `~/.local/share/uktr/ask/`, the settings for every tool went from
+`UKTR_` to `HOTKEYS_` (`HOTKEYS_URL`, `HOTKEYS_LANGUAGE`, `HOTKEYS_ASR_URL`,
+`HOTKEYS_ASR_MODEL`), and the `ask` command is `aikey` now, with `AIKEY_MODEL`, `AIKEY_MODELS`,
+`AIKEY_HISTORY` and `AIKEY_SCREEN_PROMPT`. Settings of one tool (`UKTR_MODEL`, `ELI12_LANG`,
+...) keep their names. `./install.sh` moves the config and the chats (close the chat windows
+first; it tells you if one is open) and removes the old `ask` link. It does not rename the keys
+in your config: do that when you like.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `UKTR_URL` | `http://localhost:52625/v1` | OpenAI-compatible API base URL (all tools) |
+| `HOTKEYS_URL` | `http://localhost:52625/v1` | OpenAI-compatible API base URL (all tools) |
 | `UKTR_MODEL` | `translategemma:4b` | translation model |
 | `UKTR_LISTEN_MODEL` | `UKTR_MODEL` | translation model for `listen` |
 | `UKTR_FILE_MODEL` | `UKTR_MODEL` | translation model for documents (`uktr FILE`, the Dolphin menu) |
-| `UKTR_LANGUAGE` | the desktop language | your language: a code or name (`nl`, `Dutch`) |
-| `UKTR_TO` | `UKTR_LANGUAGE` | target language for uktr |
+| `HOTKEYS_LANGUAGE` | the desktop language | your language: a code or name (`nl`, `Dutch`) |
+| `UKTR_TO` | `HOTKEYS_LANGUAGE` | target language for uktr |
 | `UKTR_OCR` | `ukr+eng` | tesseract languages for `shot` |
 | `UKTR_LANG` | `uk` | spoken language for `listen` (empty = auto-detect) |
-| `UKTR_ASR_URL` | `UKTR_URL` | API base URL for Whisper |
-| `UKTR_ASR_MODEL` | `whisper-v3:turbo` | Whisper model |
+| `HOTKEYS_ASR_URL` | `HOTKEYS_URL` | API base URL for Whisper |
+| `HOTKEYS_ASR_MODEL` | `whisper-v3:turbo` | Whisper model |
 | `UKTR_LISTEN_MAX` | `12` | longest audio chunk, in seconds |
 | `UKTR_SILENCE` | `300` | int16 RMS level that counts as quiet |
 | `ELI12_MODEL` | `qwen3.5:9b` | chat model for `eli12` |
 | `ELI12_SENTENCES` | `5` | longest explanation for `eli12`, in sentences |
-| `ELI12_LANG` | `UKTR_LANGUAGE` | language for `eli12` (a code, a name, or `both`) |
+| `ELI12_LANG` | `HOTKEYS_LANGUAGE` | language for `eli12` (a code, a name, or `both`) |
 | `ELI12_WINDOW` | `1` | `0`: show the explanation in a plain text box, not in the chat window |
 | `UKTR_WINDOW` | `1` | `0`: show the translation (`clip`, `shot`) in a plain text box, not in the chat window |
 | `FIX_MODEL` | `qwen3.5:9b` | chat model for `fixtext` |
-| `ASK_MODEL` | `qwen3.5:9b` | chat model for `ask` (must read images for `--screen`) |
-| `ASK_MODELS` | (none) | models to choose from per chat, comma-separated; a menu with two or more |
-| `ASK_HISTORY` | `1` | `0`: do not save `ask` chats |
-| `DICTATE_LANG` | `UKTR_LANGUAGE` | language you speak to `dictate` (empty = Whisper guesses) |
+| `AIKEY_MODEL` | `qwen3.5:9b` | chat model for `aikey` (must read images for `--screen`) |
+| `AIKEY_MODELS` | (none) | models to choose from per chat, comma-separated; a menu with two or more |
+| `AIKEY_HISTORY` | `1` | `0`: do not save `aikey` chats |
+| `DICTATE_LANG` | `HOTKEYS_LANGUAGE` | language you speak to `dictate` (empty = Whisper guesses) |
 | `DICTATE_SILENCE` | `150` | microphone level that counts as quiet |
 | `DICTATE_PAUSE` | `2` | seconds of quiet after speech that end a dictation |
 | `DICTATE_MAX` | `120` | longest dictation, in seconds |
 | `DICTATE_TO` | `English` | language that `dictate --translate` types |
 | `DICTATE_MODEL` | `UKTR_MODEL` | translation model for `dictate --translate` |
-| `ASK_SCREEN_PROMPT` | (English, answer in your language) | first question for `ask --screen`; `{language}` = your language |
+| `AIKEY_SCREEN_PROMPT` | (English, answer in your language) | first question for `aikey --screen`; `{language}` = your language |
 
 Example, one-off: translate to German, and subtitles for Russian audio:
 

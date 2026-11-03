@@ -3,16 +3,16 @@
 
   eli12 FILE            .pdf .epub .docx .odt .html .txt .md -> stdout
   eli12 < text          stdin -> stdout
-  eli12 clip            clipboard -> popup window
-  eli12 --popup FILE    file -> popup window (Dolphin service menu)
+  eli12 clip            clipboard -> chat window
+  eli12 --popup FILE    file -> chat window (Dolphin service menu)
 
   -l LANG               language: a code or name (nl, de, English); both = yours, then English
 
-Uses the same backend and config file as uktr (~/.config/uktr/config, UKTR_URL).
+Uses the shared config file (~/.config/local-llm-hotkeys/config, HOTKEYS_URL).
   ELI12_MODEL       default qwen3.5:9b (any chat model; translation-only models do not work)
-  ELI12_LANG        default your language (UKTR_LANGUAGE, else the desktop's)
+  ELI12_LANG        default your language (HOTKEYS_LANGUAGE, else the desktop's)
   ELI12_SENTENCES   default 5 (longest explanation)
-  ELI12_WINDOW      default 1: clip and --popup open the ask window (the explanation streams
+  ELI12_WINDOW      default 1: clip and --popup open the chat window (the explanation streams
                     in, and you can ask about the text); 0 = a plain text box (kdialog)
 """
 import os
@@ -44,7 +44,7 @@ RULES = ("You explain texts to a smart 12-year-old. The text can be anything: an
          "reader must take with its deadline. Copy dates exactly as the text writes them: never add a "
          "year, a weekday or a date that is not in the text.\n"
          "{you}Write only in {lang}, with no other heading. Nothing else.")
-# Added to ask's rules for questions after the explanation: a small model otherwise fills gaps
+# Added to aikey's rules for questions after the explanation: a small model otherwise fills gaps
 # in a letter with what such letters usually say ("you can still pay without extra costs").
 FOLLOW_UP = (" The first user message is a text that the user wants to understand. Answer questions "
              "about it only with what that text says. If the text does not say it, say that it does "
@@ -79,14 +79,14 @@ def explain(text, lang):
 
 
 def window_ok(langs):
-    """The ask window can show this: one language, PySide6 there, not switched off."""
+    """The chat window (aikey's) can show this: one language, PySide6 there, not switched off."""
     import ask
     return WINDOW and len(langs) == 1 and ask.can_window()
 
 
 def explain_window(text, title, lang):
-    """The explanation in the ask window: it streams in, Esc stops it, and you can ask about
-    the text. The first answer follows eli12's rules; follow-up questions are normal ask
+    """The explanation in the chat window: it streams in, Esc stops it, and you can ask about
+    the text. The first answer follows eli12's rules; follow-up questions are normal aikey
     questions, with the text and the explanation as context."""
     import ask
     chat = ask.Chat(save=True, model=MODEL, kind="eli12", first=ask.First(rules=rules(lang), clean=clean),

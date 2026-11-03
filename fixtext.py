@@ -5,7 +5,7 @@
   fixtext < text        stdin -> stdout
   fixtext FILE          .txt .md (and the other uktr file types) -> stdout
 
-Uses the same backend and config file as uktr (~/.config/uktr/config, UKTR_URL).
+Uses the shared config file (~/.config/local-llm-hotkeys/config, HOTKEYS_URL).
   FIX_MODEL   default qwen3.5:9b (any chat model)
 """
 import difflib

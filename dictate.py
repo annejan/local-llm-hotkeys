@@ -12,8 +12,8 @@ The text is typed by pasting: it goes on the clipboard and the primary selection
 virtual keyboard presses Shift+Insert (that pastes in Qt, GTK, browsers and Konsole). This
 needs write access to /dev/uinput; without it the text stays on the clipboard for Ctrl+V.
 
-Uses the same server and config file as uktr (~/.config/uktr/config, UKTR_ASR_URL).
-  DICTATE_LANG      language you speak, default your language (UKTR_LANGUAGE, else the
+Uses the shared config file (~/.config/local-llm-hotkeys/config, HOTKEYS_ASR_URL).
+  DICTATE_LANG      language you speak, default your language (HOTKEYS_LANGUAGE, else the
                     desktop's); "" = Whisper guesses
   DICTATE_SILENCE   microphone level that counts as quiet, default 150
   DICTATE_PAUSE     seconds of quiet after speech that end the dictation, default 2

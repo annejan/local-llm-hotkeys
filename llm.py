@@ -1,7 +1,8 @@
-"""Shared code for uktr, eli12, fixtext, ask and dictate: config, the LLM server, clipboard, popups.
+"""Shared code for uktr, eli12, fixtext, aikey and dictate: config, the LLM server, clipboard, popups.
 
-Config: ~/.config/uktr/config (KEY=value lines, # comments), overridden by environment
-variables that start with UKTR_, ELI12_, FIX_, ASK_ or DICTATE_.
+Config: ~/.config/local-llm-hotkeys/config (KEY=value lines, # comments), overridden by
+environment variables that start with HOTKEYS_, AIKEY_, UKTR_, ELI12_, FIX_ or DICTATE_.
+Names from before 0.4 still work: ~/.config/uktr/config, UKTR_URL, ASK_MODEL ... (see RENAMED).
 """
 import atexit
 import contextlib
@@ -21,27 +22,50 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-CONFIG = os.path.expanduser("~/.config/uktr/config")
-PREFIXES = ("UKTR_", "ELI12_", "FIX_", "ASK_", "DICTATE_")
+_CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+CONFIG = os.path.join(_CONFIG_HOME, "local-llm-hotkeys", "config")
+# Before 0.4; install.sh moves it. 0.3 did not look at XDG_CONFIG_HOME, so this one does not either.
+OLD_CONFIG = os.path.expanduser("~/.config/uktr/config")
+PREFIXES = ("HOTKEYS_", "AIKEY_", "UKTR_", "ELI12_", "FIX_", "DICTATE_", "ASK_")
+# Renamed in 0.4; the old names still work. Settings for every tool got the project's prefix,
+# the ask command became aikey. Settings of one tool (UKTR_MODEL, ELI12_LANG ...) kept theirs.
+RENAMED = {"UKTR_URL": "HOTKEYS_URL", "UKTR_LANGUAGE": "HOTKEYS_LANGUAGE",
+           "UKTR_ASR_URL": "HOTKEYS_ASR_URL", "UKTR_ASR_MODEL": "HOTKEYS_ASR_MODEL",
+           "ASK_MODEL": "AIKEY_MODEL", "ASK_MODELS": "AIKEY_MODELS",
+           "ASK_HISTORY": "AIKEY_HISTORY", "ASK_SCREEN_PROMPT": "AIKEY_SCREEN_PROMPT"}
 
 
-def read_config(path=CONFIG, environ=None):
-    conf = {}
+def new_names(settings):
+    """The settings with every old name also under its new name, unless the new name is set
+    in the same place (the file, or the environment)."""
+    out = dict(settings)
+    for old, new in RENAMED.items():
+        if old in out and new not in out:
+            out[new] = out[old]
+    return out
+
+
+def read_config(path=None, environ=None):
+    """The config file (the old one when there is no new one yet), with the environment on top."""
+    if path is None:
+        path = OLD_CONFIG if os.path.exists(OLD_CONFIG) and not os.path.exists(CONFIG) else CONFIG
+    found = {}
     try:
         with open(path, encoding="utf-8") as f:
             for line in f:
                 key, sep, val = line.strip().partition("=")
                 if sep and key and not key.startswith("#"):
-                    conf[key.strip()] = val.split(" #")[0].strip()  # "KEY=val   # comment"
+                    found[key.strip()] = val.split(" #")[0].strip()  # "KEY=val   # comment"
     except FileNotFoundError:
         pass
     environ = os.environ if environ is None else environ
-    conf.update({k: v for k, v in environ.items() if k.startswith(PREFIXES)})
+    conf = new_names(found)
+    conf.update(new_names({k: v for k, v in environ.items() if k.startswith(PREFIXES)}))
     return conf
 
 
 conf = read_config()
-URL = conf.get("UKTR_URL", "http://localhost:52625/v1").rstrip("/")  # FastFlowLM on the NPU
+URL = conf.get("HOTKEYS_URL", "http://localhost:52625/v1").rstrip("/")  # FastFlowLM on the NPU
 
 
 LANGUAGES = {"en": "English", "nl": "Dutch", "de": "German", "fr": "French", "es": "Spanish",
@@ -63,10 +87,10 @@ def parse_language(value):
 
 
 def language(environ=None):
-    """Your language: UKTR_LANGUAGE, else the language of the desktop (LANGUAGE, LC_ALL,
+    """Your language: HOTKEYS_LANGUAGE, else the language of the desktop (LANGUAGE, LC_ALL,
     LC_MESSAGES, LANG, in that order). Translations and explanations are written in it."""
-    if conf.get("UKTR_LANGUAGE"):
-        return parse_language(conf["UKTR_LANGUAGE"])
+    if conf.get("HOTKEYS_LANGUAGE"):
+        return parse_language(conf["HOTKEYS_LANGUAGE"])
     environ = os.environ if environ is None else environ
     for var in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
         value = environ.get(var, "").split(":")[0]
@@ -306,14 +330,14 @@ def transcribe(pcm, lang=""):
     """Text of 16 kHz mono s16 audio ("" for nothing or a known hallucination).
     lang: a code such as uk or nl; "" lets Whisper guess (unreliable on short audio)."""
     boundary = "uktrboundary7d1f"
-    fields = {"model": conf.get("UKTR_ASR_MODEL", "whisper-v3:turbo"), "response_format": "json"}
+    fields = {"model": conf.get("HOTKEYS_ASR_MODEL", "whisper-v3:turbo"), "response_format": "json"}
     if lang:
         fields["language"] = lang
     body = b"".join(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
                     for k, v in fields.items())
     body += (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="a.wav"\r\n'
              "Content-Type: audio/wav\r\n\r\n").encode() + wav_bytes(pcm) + f"\r\n--{boundary}--\r\n".encode()
-    req = urllib.request.Request(conf.get("UKTR_ASR_URL", URL).rstrip("/") + "/audio/transcriptions",
+    req = urllib.request.Request(conf.get("HOTKEYS_ASR_URL", URL).rstrip("/") + "/audio/transcriptions",
                                  body, {"Content-Type": f"multipart/form-data; boundary={boundary}"})
     with _open(req, timeout=120) as r:
         text = plain(json.load(r).get("text", "")).strip()
