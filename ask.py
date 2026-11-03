@@ -46,6 +46,11 @@ MODEL = llm.conf.get("ASK_MODEL", "qwen3.5:9b")
 # Models to choose from (ASK_MODELS=a,b,c). Not the server's list: FastFlowLM lists every model it
 # knows, also the ones that are not downloaded, and does not say which can chat or read images.
 MODELS = list(dict.fromkeys(m.strip() for m in llm.conf.get("ASK_MODELS", "").split(",") if m.strip()))
+
+
+def choosing():
+    """Choosing the model per chat is on: ASK_MODELS names two or more. Off, nothing changes."""
+    return len(MODELS) >= 2
 HISTORY_CHARS = 24000  # older turns are dropped so the prompt stays inside the context window
 SAVE = llm.conf.get("ASK_HISTORY", "1") != "0"
 SAVE_DIR = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
@@ -133,7 +138,7 @@ class Chat:
             raise ValueError(f"{path} is not a saved chat")
         kind = data.get("kind") if data.get("kind") in KINDS else ""
         model, follow_up = KINDS[kind]() if kind else (MODEL, "")
-        if data.get("model") in MODELS:  # picked for this chat, and still one to choose from
+        if choosing() and data.get("model") in MODELS:  # picked for this chat, and still offered
             model = data["model"]
         return cls(save=True, path=path, turns=turns, model=model, kind=kind, follow_up=follow_up)
 
@@ -345,8 +350,9 @@ def when_text(when):
 def terminal(chat=None):
     import readline  # noqa: F401  (line editing and arrow-up history for input())
     chat = chat or Chat(save=True)
-    print(f"ask {chat.model}: /new starts a new chat, /model NAME picks a model, Ctrl+D or /quit "
-          "quits.", file=sys.stderr)
+    picked = None  # the model picked with /model: new chats take it, not a resumed chat's model
+    print(f"ask {chat.model}: /new starts a new chat, {'/model NAME picks a model, ' if choosing() else ''}"
+          "Ctrl+D or /quit quits.", file=sys.stderr)
     for t in chat.turns:  # a resumed chat: show it first
         # plain(): a saved question can be a copied text (uktr, eli12) with escape codes in it
         if t["role"] == "user":
@@ -365,13 +371,16 @@ def terminal(chat=None):
         if question in ("/quit", "/exit"):
             return
         if question == "/new":
-            chat = Chat(save=True, model=chat.model)
+            chat = Chat(save=True, model=picked)
             print("(new chat)", file=sys.stderr)
+            continue
+        if question.split()[0] == "/model" and not choosing():
+            print("(to choose the model per chat, list two or more in ASK_MODELS)", file=sys.stderr)
             continue
         if question.split()[0] == "/model":
             name = question[len("/model"):].strip()
             if name:
-                chat.model = name
+                chat.model = picked = name
             others = ", ".join(m for m in MODELS if m != chat.model)
             print(f"(model: {chat.model}{'; also: ' + others if others else ''})", file=sys.stderr)
             continue
@@ -497,7 +506,8 @@ def window(first=None, chat=None, title=None):
             super().__init__()
             self.chat, self.busy, self.stop = chat or Chat(save=True), False, threading.Event()
             self.answer, self.error, self.render_due = "", "", False
-            self.title, self.last_model = title, None
+            # picked: the model chosen in the menu, for new chats (a tool's chat has its own model)
+            self.title, self.last_model, self.picked = title, None, None
             self.setWindowTitle(title or f"ask — {self.chat.model}")
             self.resize(1000, 680)
 
@@ -521,7 +531,7 @@ def window(first=None, chat=None, title=None):
 
             # A menu of models, only when ASK_MODELS names two or more: the model of this chat.
             self.models = None
-            if len(MODELS) >= 2:
+            if choosing():
                 self.models = QComboBox()
                 self.models.setToolTip("The model that answers in this chat (ASK_MODELS)")
                 self.models.activated.connect(lambda _: self.pick_model(self.models.currentText()))
@@ -580,9 +590,10 @@ def window(first=None, chat=None, title=None):
         def show_model(self):
             """The menu and the title show the model of this chat (also one not in ASK_MODELS)."""
             if self.models:
-                if self.models.findText(self.chat.model) < 0:
+                items = list(dict.fromkeys([*MODELS, self.chat.model]))  # no stale extra from before
+                if [self.models.itemText(i) for i in range(self.models.count())] != items:
                     self.models.clear()
-                    self.models.addItems(list(dict.fromkeys([*MODELS, self.chat.model])))
+                    self.models.addItems(items)
                 self.models.setCurrentText(self.chat.model)
             if not self.title:
                 self.setWindowTitle(f"ask — {self.chat.model}")
@@ -590,8 +601,9 @@ def window(first=None, chat=None, title=None):
         def pick_model(self, model):
             if self.busy or model == self.chat.model:
                 return self.show_model()
-            self.chat.model = model
+            self.chat.model = self.picked = model
             self.show_model()
+            self.render()  # the empty-chat text names the model
             self.status.setText(f"next answer by {model}")
             self.input.setFocus()
 
@@ -627,7 +639,8 @@ def window(first=None, chat=None, title=None):
             with contextlib.suppress(OSError):
                 os.remove(path)
             if path == self.chat.path:
-                self.chat = Chat(save=True)
+                self.chat = Chat(save=True, model=self.picked)
+                self.show_model()
                 self.render()
             self.fill_list()
 
@@ -682,7 +695,10 @@ def window(first=None, chat=None, title=None):
             switching = self.last_model and self.chat.model != self.last_model
             # FastFlowLM loads one model at a time: a switch takes a few seconds more
             self.status.setText(f"loading {self.chat.model}…" if switching else "thinking…")
-            self.last_model = self.chat.model
+            first = self.chat.first
+            own_stream = first and first.stream and self.chat.first_answer()
+            # uktr's translation comes from its own model, so the next question switches models
+            self.last_model = "(the tool's own model)" if own_stream else self.chat.model
             if self.models:
                 self.models.setEnabled(False)
             self.worker = threading.Thread(target=self.work, args=(question,), daemon=True)
@@ -728,8 +744,8 @@ def window(first=None, chat=None, title=None):
         def new_chat(self):
             if self.busy:
                 return
-            # a new chat keeps the model picked in the menu; without the menu, ASK_MODEL
-            self.chat, self.error = Chat(save=True, model=self.chat.model if self.models else None), ""
+            # a new chat takes the model picked in the menu; nothing picked (or no menu): ASK_MODEL
+            self.chat, self.error = Chat(save=True, model=self.picked), ""
             self.show_model()
             self.list.clearSelection()
             self.status.setText("new chat")
@@ -764,7 +780,7 @@ def window(first=None, chat=None, title=None):
             else:
                 self.close()
 
-    app = QApplication(sys.argv[:1])
+    app = QApplication.instance() or QApplication(sys.argv[:1])  # one already there: the tests
     app.setApplicationName("ask")
     app.setDesktopFileName("ask")  # Plasma takes the icon from ask.desktop; this one is for elsewhere
     app.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.realpath(__file__)),
