@@ -504,8 +504,9 @@ and the saved chats from `~/.local/share/uktr/ask/`, the settings for every tool
 `aikey-region.desktop` now (they were `ask...`), so a running Plasma takes the new command at
 once. `./install.sh` moves the config and the chats (close the chat windows first; it tells
 you if one is open), and removes the old `ask` link and the old hotkey files. If you had
-changed the keys of a chat hotkey, set them again in System Settings → Shortcuts; `install.sh`
-tells you. It does not rename the keys in your config: do that when you like.
+changed the keys of a chat hotkey, set them again in System Settings → Shortcuts, and if you
+had pinned the chat to the panel or the favourites, pin it again; `install.sh` tells you. It
+does not rename the keys in your config: do that when you like.
 
 | Key | Default | Meaning |
 |---|---|---|

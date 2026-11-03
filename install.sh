@@ -50,23 +50,34 @@ chats_open() {  # a chat runs (aikey, or an eli12 or uktr window): it saves in t
     pgrep -u "$(id -u)" -f "($BIN/(ask|aikey|eli12|uktr)|$REPO/(ask|eli12|uktr)\.py)( |\$)" >/dev/null
 }
 
-old_hotkey() {  # old_hotkey ID: $APPS/ID.desktop is a chat hotkey of ours from before 0.4
-    grep -qE '^Exec=(ask|aikey) ' "$APPS/$1.desktop" 2>/dev/null
+old_hotkey() {  # old_hotkey ID: $APPS/ID.desktop is a chat hotkey from before 0.4, also one you edited
+    grep -qE '^Exec=(.*[ /="])?(ask|aikey)"?( |$)' "$APPS/$1.desktop" 2>/dev/null &&
+        grep -q '^X-KDE-Shortcuts=' "$APPS/$1.desktop"
 }
+runs_ask() {  # the hotkey files from before 0.4 in $APPS that still start ask
+    local old
+    for old in $OLD_HOTKEYS; do
+        if grep -qE '^Exec=(.*[ /="])?ask"?( |$)' "$APPS/$old.desktop" 2>/dev/null; then printf ' %s' "$old.desktop"; fi
+    done
+}
+ours() { [ "$(readlink -f "$BIN/$1" 2>/dev/null)" = "$REPO/ask.py" ]; }  # $BIN/$1 is our link to ask.py
 changed_keys() {  # changed_keys ID FILE: the keys set in KDE for hotkey ID.desktop, if not those of FILE
-    python3 - "${XDG_CONFIG_HOME:-$HOME/.config}/kglobalshortcutsrc" "[services][$1.desktop]" "$2" <<'PY'
-import sys
-conf, group, desktop = sys.argv[1:]
+    python3 - "${XDG_CONFIG_HOME:-$HOME/.config}/kglobalshortcutsrc" "$1.desktop" "$2" <<'PY'
+import re, sys
+conf, hotkey, desktop = sys.argv[1:]
 try:
     lines = open(conf, encoding="utf-8").read().splitlines()
 except OSError:
     sys.exit()
-keys, inside = None, False
+found, group = {}, None
 for line in lines:
     if line.startswith("["):
-        inside = line.strip() == group
-    elif inside and line.startswith("_launch="):
-        keys = line.split("=", 1)[1].strip()
+        group = line.strip()
+    elif group and line.startswith("_launch="):
+        found[group] = line.split("=", 1)[1].strip()
+keys = found.get(f"[services][{hotkey}]")  # Plasma 6
+if keys is None and f"[{hotkey}]" in found:  # Plasma 5: the keys, the default keys, the name
+    keys = re.split(r"(?<!\\),", found[f"[{hotkey}]"])[0]
 if keys is not None:  # KDE writes the keys with \t between them; "none" is no key
     default = next(l for l in open(desktop) if l.startswith("X-KDE-Shortcuts=")).split("=", 1)[1].strip()
     mine = [k for k in keys.split("\\t") if k and k != "none"]
@@ -173,14 +184,6 @@ for t in $TOOLS; do
         warn "$BIN/$t is a link to $target; left alone"; continue; fi
     ln -sfn "$REPO/$(src "$t")" "$BIN/$t" && ok "$t"
 done
-# Before 0.4 the chat command was ask, a name that other programs use too (the Alexa Skills Kit CLI).
-if [ "$(readlink -f "$BIN/ask" 2>/dev/null)" = "$REPO/ask.py" ]; then
-    if [ "$(readlink -f "$BIN/aikey" 2>/dev/null)" = "$REPO/ask.py" ]; then
-        rm "$BIN/ask" && ok "removed $BIN/ask: the chat command is aikey now"
-    else
-        warn "$BIN/ask kept: the chat command is aikey now, but $BIN/aikey is not ours"
-    fi
-fi
 case ":$PATH:" in *":$BIN:"*) ;; *) warn "$BIN is not in your PATH; add it, or the hotkeys cannot find the commands" ;; esac
 
 step "Config"
@@ -225,16 +228,22 @@ if [ -n "$SYCOCA" ]; then
     # 0.4 renamed the chat hotkeys from ask*.desktop to aikey*.desktop. For a hotkey file that keeps
     # its name, a running Plasma keeps the old Exec= until the next login (KDE bug 487941); a new
     # name it picks up at once. A key you changed for the old file is not taken over.
+    removed=""
     for old in $OLD_HOTKEYS; do
         old_hotkey "$old" || continue
         new=${old/ask/aikey}
         changed=$(changed_keys "$old" "kde/$new.desktop")
-        rm "$APPS/$old.desktop" && ok "removed the old hotkey $old.desktop (it is $new.desktop now)"
+        rm "$APPS/$old.desktop" && ok "removed the old hotkey $old.desktop (it is $new.desktop now)" && removed=1
         if [ -n "$changed" ]; then
             warn "you had set the keys of $old.desktop to $changed; $new.desktop has its own keys:"
             echo "    set yours again in System Settings → Shortcuts (search for aikey)."
         fi
     done
+    if [ -n "$removed" ] && grep -qsE 'applications:ask(-screen|-region)?\.desktop' \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/plasma-org.kde.plasma.desktop-appletsrc" \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/kactivitymanagerd-statsrc"; then
+        warn "you had pinned the chat to the panel or the favourites: pin it again (it is aikey now)"
+    fi
     for f in kde/*.desktop; do
         cp "$f" "$APPS/" && ok "$(sed -n 's/^Name=//p' "$f")  [$(keys "$f")]"
     done
@@ -252,6 +261,21 @@ if [ -n "$SYCOCA" ]; then
     fi
 else
     step "KDE not found: hotkeys skipped (the commands work without them)"
+fi
+
+# Before 0.4 the chat command was ask, a name that other programs use too (the Alexa Skills Kit CLI).
+# It goes after the KDE step, and only when no hotkey file from before 0.4 still starts it.
+if ours ask; then
+    step "The old ask command"
+    left=$(runs_ask)
+    if ! ours aikey; then
+        warn "$BIN/ask kept: the chat command is aikey now, but $BIN/aikey is not ours"
+    elif [ -n "$left" ]; then
+        warn "$BIN/ask kept: in $APPS,$left still start it. Remove those"
+        echo "    (the chat hotkeys are aikey*.desktop now), then run ./install.sh again."
+    else
+        rm "$BIN/ask" && ok "removed $BIN/ask: the chat command is aikey now"
+    fi
 fi
 
 step "The model server (FastFlowLM on the NPU)"
