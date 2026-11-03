@@ -57,7 +57,7 @@ AltGr works as Alt. See [Install](#install) for the setup and [the Copilot key](
 - **dictate**: speak, and the text is typed into the active window.
 
 All of them talk to any OpenAI-compatible server. The default setup runs everything on the NPU
-with [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM); ollama on a GPU also works.
+with [FastFlowLM](https://fastflowlm.com/); ollama on a GPU also works.
 Python standard library only, except the `aikey` chat window, which uses PySide6.
 
 ## uktr: translate
@@ -411,13 +411,14 @@ works as Alt here.
 
 ## Backend: FastFlowLM on the NPU
 
-FastFlowLM runs on the NPU of AMD Ryzen AI 300 laptops (XDNA2) with the `amdxdna` kernel
-driver. Its portable tarball works on any distribution. Tested on a Ryzen AI 7 PRO 350 with
+[FastFlowLM](https://fastflowlm.com/) runs on the NPU of AMD Ryzen AI 300 laptops (XDNA2) with
+the `amdxdna` kernel driver. Its portable tarball works on any distribution. FastFlowLM has its
+own [Linux install guide](https://fastflowlm.com/docs/install_lin/). Tested on a Ryzen AI 7 PRO 350 with
 openSUSE Tumbleweed, kernel 7.2+. Without such an NPU, use ollama (see [Models](#models)).
 
-1. Get the portable Linux tarball (`fastflowlm_<version>_linux.tar.gz`) from the FastFlowLM
-   releases. It includes XRT and the xdna plugin, so you do not have to build XRT. Put `flm`
-   in `~/.local/bin`.
+1. Get the portable Linux tarball (`fastflowlm_<version>_linux.tar.gz`) from the
+   [FastFlowLM releases](https://github.com/ROCm/FastFlowLM/releases). It includes XRT and the
+   xdna plugin, so you do not have to build XRT. Put `flm` in `~/.local/bin`.
 2. Raise the locked-memory limit. The NPU needs more than the 8 MB default. Plasma apps
    get their limits from the systemd user manager, not from PAM, so use a drop-in for
    `user@.service`:
