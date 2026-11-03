@@ -348,7 +348,8 @@ cd local-llm-hotkeys
   it is; after a `git pull` you have the new version at once),
 - creates `~/.config/local-llm-hotkeys/config` if there is none, and shows your language,
 - after an update from before 0.4: moves your config and saved chats out of the `uktr`
-  folders and removes the old `ask` command (see Configuration, "Renamed in 0.4"),
+  folders, and removes the old `ask` command and its hotkey files (see Configuration,
+  "Renamed in 0.4"),
 - installs the KDE hotkeys, the Dolphin menu and the Copilot key map,
 - checks the model server and lists the models that are missing.
 
@@ -375,6 +376,7 @@ mkdir -p ~/.local/bin ~/.config/local-llm-hotkeys
 for tool in uktr eli12 fixtext dictate; do ln -s "$PWD/$tool.py" ~/.local/bin/$tool; done
 ln -s "$PWD/ask.py" ~/.local/bin/aikey
 cp config.example ~/.config/local-llm-hotkeys/config
+rm -f ~/.local/share/applications/ask{,-screen,-region}.desktop   # before 0.4
 cp kde/*.desktop ~/.local/share/applications/
 kbuildsycoca6
 mkdir -p ~/.local/share/kio/servicemenus
@@ -384,7 +386,10 @@ chmod +x ~/.local/share/kio/servicemenus/uktr.desktop
 
 `~/.local/bin` must be in your `PATH` (it is by default on openSUSE). Check with `uktr --help`.
 The shortcuts come from `X-KDE-Shortcuts` in the `.desktop` files. After `kbuildsycoca6`,
-KDE (Plasma 6) registers them at once. To change a key, use System Settings → Shortcuts.
+KDE (Plasma 6) registers them at once. If you change the command (`Exec=`) of a hotkey file
+that KDE already has, a running Plasma keeps the old command until you log in again
+([KDE bug 487941](https://bugs.kde.org/show_bug.cgi?id=487941)). To change a key, use
+System Settings → Shortcuts.
 
 ### The Copilot key
 
@@ -495,9 +500,13 @@ and the saved chats from `~/.local/share/uktr/ask/`, the settings for every tool
 `UKTR_` to `HOTKEYS_` (`HOTKEYS_URL`, `HOTKEYS_LANGUAGE`, `HOTKEYS_ASR_URL`,
 `HOTKEYS_ASR_MODEL`), and the `ask` command is `aikey` now, with `AIKEY_MODEL`, `AIKEY_MODELS`,
 `AIKEY_HISTORY` and `AIKEY_SCREEN_PROMPT`. Settings of one tool (`UKTR_MODEL`, `ELI12_LANG`,
-...) keep their names. `./install.sh` moves the config and the chats (close the chat windows
-first; it tells you if one is open) and removes the old `ask` link. It does not rename the keys
-in your config: do that when you like.
+...) keep their names. The chat hotkeys are `aikey.desktop`, `aikey-screen.desktop` and
+`aikey-region.desktop` now (they were `ask...`), so a running Plasma takes the new command at
+once. `./install.sh` moves the config and the chats (close the chat windows first; it tells
+you if one is open), and removes the old `ask` link and the old hotkey files. If you had
+changed the keys of a chat hotkey, set them again in System Settings → Shortcuts, and if you
+had pinned the chat to the panel or the favourites, pin it again; `install.sh` tells you. It
+does not rename the keys in your config: do that when you like.
 
 | Key | Default | Meaning |
 |---|---|---|
