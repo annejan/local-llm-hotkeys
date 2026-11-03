@@ -10,13 +10,16 @@
 set -u
 cd "$(dirname "$(readlink -f "$0")")" || exit 1
 REPO=$PWD
-TOOLS="uktr eli12 fixtext ask dictate"
+TOOLS="uktr eli12 fixtext aikey dictate"
 BIN=$HOME/.local/bin
 APPS=$HOME/.local/share/applications
 MENUS=$HOME/.local/share/kio/servicemenus
 ICONS=$HOME/.local/share/icons/hicolor/scalable/apps
 XKB=$HOME/.config/xkb
-CONF=$HOME/.config/uktr/config
+CONF=${XDG_CONFIG_HOME:-$HOME/.config}/local-llm-hotkeys/config
+CHATS=${XDG_DATA_HOME:-$HOME/.local/share}/local-llm-hotkeys/chats
+OLD_CONF=$HOME/.config/uktr/config                         # before 0.4 (it did not use XDG_CONFIG_HOME)
+OLD_CHATS=${XDG_DATA_HOME:-$HOME/.local/share}/uktr/ask    # before 0.4
 MODELS="translategemma:4b hy-mt2-flash:1.8b whisper-v3:turbo qwen3.5:9b"
 
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
@@ -38,10 +41,18 @@ print(" or ".join(names))
 PY
 }
 
+src() {  # the file behind a command: aikey runs ask.py (called ask before 0.4)
+    if [ "$1" = aikey ]; then echo ask.py; else echo "$1.py"; fi
+}
+
+chats_open() {  # a chat runs (aikey, or an eli12 or uktr window): it saves in the folder it found at its start
+    pgrep -u "$(id -u)" -f "($BIN/(ask|aikey|eli12|uktr)|$REPO/(ask|eli12|uktr)\.py)( |\$)" >/dev/null
+}
+
 uninstall() {
     step "Removing local-llm-hotkeys"
-    for t in $TOOLS; do
-        if [ "$(readlink -f "$BIN/$t" 2>/dev/null)" = "$REPO/$t.py" ]; then rm "$BIN/$t" && ok "removed $BIN/$t"; fi
+    for t in $TOOLS ask; do  # ask: the command before 0.4
+        if [ "$(readlink -f "$BIN/$t" 2>/dev/null)" = "$REPO/$(src "$t")" ]; then rm "$BIN/$t" && ok "removed $BIN/$t"; fi
     done
     for f in kde/*.desktop; do
         [ -f "$APPS/$(basename "$f")" ] && rm "$APPS/$(basename "$f")" && ok "removed hotkey $(basename "$f")"
@@ -50,7 +61,8 @@ uninstall() {
     [ -f "$ICONS/local-llm-hotkeys.svg" ] && rm "$ICONS/local-llm-hotkeys.svg" && ok "removed the icon"
     for b in kbuildsycoca6 kbuildsycoca5; do command -v $b >/dev/null && $b >/dev/null 2>&1 && break; done
     step "Kept"
-    echo "  your config ($CONF) and saved chats (~/.local/share/uktr/ask/)."
+    for p in "$CONF" "$OLD_CONF"; do [ -f "$p" ] && echo "  your config: $p"; done
+    for p in "$CHATS" "$OLD_CHATS"; do [ -d "$p" ] && echo "  your saved chats: $p/"; done
     [ -f "$XKB/symbols/copilot" ] && echo "  the Copilot key map: rm $XKB/rules/evdev $XKB/symbols/copilot (then log in again)."
     exit 0
 }
@@ -102,13 +114,13 @@ need() {  # need COMMAND PACKAGE WHAT
 need wl-copy wl-clipboard "needed for every hotkey (clipboard)"
 need kdialog kdialog "needed for the popup windows"
 need notify-send notify "needed for notifications"
-need spectacle spectacle "needed for uktr shot and ask --screen"
+need spectacle spectacle "needed for uktr shot and aikey --screen"
 need tesseract tesseract "needed for uktr shot (OCR)"
 need pdftotext pdf "needed for PDF files"
 need pandoc pandoc "needed for epub, docx, odt and html files"
 need parec parec "needed for uktr listen and dictate"
 if python3 -c 'import PySide6.QtWidgets' 2>/dev/null; then ok "PySide6"; else
-    warn "PySide6 not found: the ask window opens in Konsole instead"; missing="$missing $(pkg pyside6)"; fi
+    warn "PySide6 not found: the aikey window opens in Konsole instead"; missing="$missing $(pkg pyside6)"; fi
 if ! command -v tesseract >/dev/null; then missing="$missing $(pkg ukr)"  # with the Ukrainian data
 elif ! tesseract --list-langs 2>/dev/null | grep -qx ukr; then
     warn "tesseract has no Ukrainian data (for uktr shot)"; missing="$missing $(pkg ukr)"; fi
@@ -128,17 +140,52 @@ mkdir -p "$BIN"
 for t in $TOOLS; do
     if [ -e "$BIN/$t" ] && [ ! -L "$BIN/$t" ]; then warn "$BIN/$t exists and is not a link; left alone"; continue; fi
     target=$(readlink "$BIN/$t" 2>/dev/null)
-    if [ -e "$BIN/$t" ] && [ "$(basename "$target")" != "$t.py" ]; then  # a link of yours to another program
+    if [ -e "$BIN/$t" ] && [ "$(basename "$target")" != "$(src "$t")" ]; then  # a link of yours to another program
         warn "$BIN/$t is a link to $target; left alone"; continue; fi
-    ln -sfn "$REPO/$t.py" "$BIN/$t" && ok "$t"
+    ln -sfn "$REPO/$(src "$t")" "$BIN/$t" && ok "$t"
 done
+# Before 0.4 the chat command was ask, a name that other programs use too (the Alexa Skills Kit CLI).
+if [ "$(readlink -f "$BIN/ask" 2>/dev/null)" = "$REPO/ask.py" ]; then
+    if [ "$(readlink -f "$BIN/aikey" 2>/dev/null)" = "$REPO/ask.py" ]; then
+        rm "$BIN/ask" && ok "removed $BIN/ask: the chat command is aikey now"
+    else
+        warn "$BIN/ask kept: the chat command is aikey now, but $BIN/aikey is not ours"
+    fi
+fi
 case ":$PATH:" in *":$BIN:"*) ;; *) warn "$BIN is not in your PATH; add it, or the hotkeys cannot find the commands" ;; esac
 
 step "Config"
+# 0.4 moved the config and the saved chats out of the uktr folders (uktr is one of the tools).
+if [ ! -e "$CONF" ] && [ -f "$OLD_CONF" ]; then
+    mkdir -p "$(dirname "$CONF")" && mv "$OLD_CONF" "$CONF" && ok "moved your config from $OLD_CONF to $CONF"
+    rmdir "$(dirname "$OLD_CONF")" 2>/dev/null
+elif [ -f "$OLD_CONF" ]; then
+    warn "$OLD_CONF is not read any more, $CONF is; remove the old one when you have what you need from it"
+fi
 if [ -f "$CONF" ]; then ok "$CONF exists (not changed)"; else
     mkdir -p "$(dirname "$CONF")" && cp config.example "$CONF" && ok "created $CONF from config.example"; fi
+if grep -qE '^[[:space:]]*(UKTR_(URL|LANGUAGE|ASR_URL|ASR_MODEL)|ASK_[A-Z_]+)=' "$CONF"; then
+    echo "  It uses names from before 0.4 (UKTR_URL, ASK_MODEL ...). They still work; the new names"
+    echo "  (HOTKEYS_URL, AIKEY_MODEL ...) are in config.example and the README."
+fi
+if [ -d "$OLD_CHATS" ] && [ ! -L "$OLD_CHATS" ] && chats_open; then
+    warn "your saved chats are still in $OLD_CHATS: a chat window is open, and it would keep"
+    echo "    saving there. Close the chat windows, then run ./install.sh again to move them to $CHATS."
+elif [ ! -e "$CHATS" ] && [ -d "$OLD_CHATS" ] && [ ! -L "$OLD_CHATS" ]; then
+    mkdir -p "$(dirname "$CHATS")" && mv "$OLD_CHATS" "$CHATS" && chmod 700 "$CHATS" \
+        && ok "moved your saved chats from $OLD_CHATS to $CHATS"
+    rmdir "$(dirname "$OLD_CHATS")" 2>/dev/null
+elif [ -d "$CHATS" ] && [ -d "$OLD_CHATS" ] && [ ! -L "$OLD_CHATS" ]; then
+    for f in "$OLD_CHATS"/*.json; do [ -f "$f" ] && mv -n "$f" "$CHATS/"; done  # -n: never over a chat
+    if rmdir "$OLD_CHATS" 2>/dev/null; then
+        ok "moved your saved chats from $OLD_CHATS to $CHATS"
+        rmdir "$(dirname "$OLD_CHATS")" 2>/dev/null
+    else
+        warn "$OLD_CHATS still has files that are not in $CHATS (same name, or not a chat); look at them yourself"
+    fi
+fi
 lang=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import llm; print(llm.language()[1])' "$REPO")
-ok "your language: $lang (set UKTR_LANGUAGE in the config to change it)"
+ok "your language: $lang (set HOTKEYS_LANGUAGE in the config to change it)"
 
 SYCOCA=$(command -v kbuildsycoca6 || command -v kbuildsycoca5)
 if [ -n "$SYCOCA" ]; then

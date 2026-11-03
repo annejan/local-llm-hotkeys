@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=ask: explain the active window
+Name=aikey: explain the active window
 Comment=Screenshot the active window; the local LLM explains it and you can ask follow-up questions
-Exec=ask --screen
+Exec=aikey --screen
 Icon=spectacle
 Categories=Utility;
 X-KDE-Shortcuts=Meta+Shift+W,Meta+Ctrl+Alt+Shift+F23,Meta+Ctrl+Alt+Shift+Touchpad Off
