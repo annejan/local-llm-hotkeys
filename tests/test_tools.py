@@ -492,13 +492,19 @@ class InstallMigration(unittest.TestCase):
     """install.sh moves what 0.4 renamed: the config, the saved chats, and the ask command."""
     REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    def install(self, home):
+    def install(self, home, *args, **environ):
         env = {"HOME": home, "PATH": f"{home}/.local/bin:/usr/bin:/bin", "LANG": "C.UTF-8",
                "XDG_CONFIG_HOME": f"{home}/.config", "XDG_DATA_HOME": f"{home}/.local/share",
-               "XDG_CACHE_HOME": f"{home}/.cache"}
-        r = subprocess.run(["bash", os.path.join(self.REPO, "install.sh")], env=env, capture_output=True,
-                           text=True, timeout=120)
+               "XDG_CACHE_HOME": f"{home}/.cache", **environ}
+        r = subprocess.run(["bash", os.path.join(self.REPO, "install.sh"), *args], env=env,
+                           capture_output=True, text=True, timeout=120)
         return re.sub(r"\x1b\[[0-9;]*m", "", r.stdout + r.stderr)
+
+    @staticmethod
+    def write(path, text="{}"):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(text)
 
     def test_moves_config_chats_and_command(self):
         with tempfile.TemporaryDirectory() as home:
@@ -541,6 +547,75 @@ class InstallMigration(unittest.TestCase):
             self.assertTrue(os.path.exists(f"{home}/.config/uktr/config"))
             self.assertIn("is not read any more", out)
             self.assertEqual(os.readlink(f"{home}/.local/bin/ask"), "/usr/bin/true")
+
+    def test_old_config_also_with_xdg_config_home(self):
+        # 0.3 read ~/.config/uktr/config whatever XDG_CONFIG_HOME was; 0.4 uses XDG_CONFIG_HOME.
+        with tempfile.TemporaryDirectory() as home:
+            self.write(f"{home}/.config/uktr/config", "UKTR_URL=http://old/v1\n")
+            read = [sys.executable, "-c", "import llm; print(llm.URL)"]
+            env = {"HOME": home, "XDG_CONFIG_HOME": f"{home}/xdg", "PATH": "/usr/bin:/bin"}
+            url = subprocess.run(read, cwd=self.REPO, env=env, capture_output=True, text=True).stdout
+            self.assertEqual(url.strip(), "http://old/v1")  # read until it is moved
+            out = self.install(home, XDG_CONFIG_HOME=f"{home}/xdg")
+            self.assertIn("moved your config", out)
+            with open(f"{home}/xdg/local-llm-hotkeys/config") as f:
+                self.assertEqual(f.read(), "UKTR_URL=http://old/v1\n")
+            self.assertFalse(os.path.exists(f"{home}/.config/uktr/config"))
+
+    def test_chats_in_both_folders(self):
+        with tempfile.TemporaryDirectory() as home:
+            old, new = f"{home}/.local/share/uktr/ask", f"{home}/.local/share/local-llm-hotkeys/chats"
+            self.write(f"{new}/a.json", '{"new": 1}')
+            self.write(f"{old}/a.json", '{"old": 1}')  # the same name: never over the new one
+            self.write(f"{old}/b.json")
+            out = self.install(home)
+            self.assertTrue(os.path.exists(f"{new}/b.json"))
+            with open(f"{new}/a.json") as f:
+                self.assertEqual(f.read(), '{"new": 1}')
+            self.assertTrue(os.path.exists(f"{old}/a.json"))
+            self.assertIn(f"{old} still has files", out)
+            os.rename(f"{old}/a.json", f"{new}/c.json")  # you sorted it out
+            out = self.install(home)
+            self.assertIn("moved your saved chats", out)
+            self.assertFalse(os.path.exists(f"{home}/.local/share/uktr"))
+
+    def test_chats_stay_while_a_chat_is_open(self):
+        # A running chat keeps the folder it found at its start; moving that folder would lose its chats.
+        with tempfile.TemporaryDirectory() as home:
+            old, new = f"{home}/.local/share/uktr/ask", f"{home}/.local/share/local-llm-hotkeys/chats"
+            self.write(f"{old}/a.json")
+            chat = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)",
+                                     f"{home}/.local/bin/aikey", "--popup"])
+            try:
+                out = self.install(home)
+            finally:
+                chat.kill()
+                chat.wait()
+            self.assertIn("a chat window is open", out)
+            self.assertTrue(os.path.exists(f"{old}/a.json"))
+            self.assertFalse(os.path.exists(new))
+            out = self.install(home)  # closed: now they move
+            self.assertIn("moved your saved chats", out)
+            self.assertTrue(os.path.exists(f"{new}/a.json"))
+
+    def test_keeps_ask_when_aikey_is_not_ours(self):
+        with tempfile.TemporaryDirectory() as home:
+            os.makedirs(f"{home}/.local/bin")
+            os.symlink(os.path.join(self.REPO, "ask.py"), f"{home}/.local/bin/ask")
+            os.symlink("/usr/bin/true", f"{home}/.local/bin/aikey")  # someone else's aikey
+            out = self.install(home)
+            self.assertEqual(os.path.realpath(f"{home}/.local/bin/ask"), os.path.join(self.REPO, "ask.py"))
+            self.assertEqual(os.readlink(f"{home}/.local/bin/aikey"), "/usr/bin/true")
+            self.assertIn(f"{home}/.local/bin/ask kept", out)
+
+    def test_uninstall_names_what_it_keeps(self):
+        with tempfile.TemporaryDirectory() as home:
+            self.write(f"{home}/.config/uktr/config", "")
+            self.write(f"{home}/.local/share/local-llm-hotkeys/chats/a.json")
+            out = self.install(home, "--uninstall")
+            self.assertIn(f"your config: {home}/.config/uktr/config", out)
+            self.assertIn(f"your saved chats: {home}/.local/share/local-llm-hotkeys/chats/", out)
+            self.assertNotIn(f"{home}/.config/local-llm-hotkeys", out)  # not there: not named
 
 
 class ChatsFolder(unittest.TestCase):

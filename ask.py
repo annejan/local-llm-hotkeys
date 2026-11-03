@@ -249,7 +249,7 @@ def _eli12():
 
 def _uktr():
     import uktr
-    return MODEL, uktr.FOLLOW_UP  # translation models cannot chat: questions go to ASK_MODEL
+    return MODEL, uktr.FOLLOW_UP  # translation models cannot chat: questions go to AIKEY_MODEL
 
 
 KINDS = {"eli12": _eli12, "uktr": _uktr}  # a chat started by another tool: kind -> (model, follow_up)
@@ -539,11 +539,11 @@ def window(first=None, chat=None, title=None):
             copy = QPushButton("Copy answer", clicked=self.copy_answer)
             saved = QPushButton("Saved chats", clicked=self.toggle_list, enabled=SAVE)
 
-            # A menu of models, only when ASK_MODELS names two or more: the model of this chat.
+            # A menu of models, only when AIKEY_MODELS names two or more: the model of this chat.
             self.models = None
             if choosing():
                 self.models = QComboBox()
-                self.models.setToolTip("The model that answers in this chat (ASK_MODELS)")
+                self.models.setToolTip("The model that answers in this chat (AIKEY_MODELS)")
                 self.models.activated.connect(lambda _: self.pick_model(self.models.currentText()))
 
             row = QHBoxLayout()
@@ -598,7 +598,7 @@ def window(first=None, chat=None, title=None):
                 self.list.setVisible(not self.list.isVisible())
 
         def show_model(self):
-            """The menu and the title show the model of this chat (also one not in ASK_MODELS)."""
+            """The menu and the title show the model of this chat (also one not in AIKEY_MODELS)."""
             if self.models:
                 items = list(dict.fromkeys([*MODELS, self.chat.model]))  # no stale extra from before
                 if [self.models.itemText(i) for i in range(self.models.count())] != items:
@@ -754,7 +754,7 @@ def window(first=None, chat=None, title=None):
         def new_chat(self):
             if self.busy:
                 return
-            # a new chat takes the model picked in the menu; nothing picked (or no menu): ASK_MODEL
+            # a new chat takes the model picked in the menu; nothing picked (or no menu): AIKEY_MODEL
             self.chat, self.error = Chat(save=True, model=self.picked), ""
             self.show_model()
             self.list.clearSelection()

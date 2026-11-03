@@ -24,7 +24,8 @@ import urllib.request
 
 _CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
 CONFIG = os.path.join(_CONFIG_HOME, "local-llm-hotkeys", "config")
-OLD_CONFIG = os.path.join(_CONFIG_HOME, "uktr", "config")  # before 0.4; install.sh moves it
+# Before 0.4; install.sh moves it. 0.3 did not look at XDG_CONFIG_HOME, so this one does not either.
+OLD_CONFIG = os.path.expanduser("~/.config/uktr/config")
 PREFIXES = ("HOTKEYS_", "AIKEY_", "UKTR_", "ELI12_", "FIX_", "DICTATE_", "ASK_")
 # Renamed in 0.4; the old names still work. Settings for every tool got the project's prefix,
 # the ask command became aikey. Settings of one tool (UKTR_MODEL, ELI12_LANG ...) kept theirs.

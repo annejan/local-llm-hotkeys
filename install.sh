@@ -18,7 +18,7 @@ ICONS=$HOME/.local/share/icons/hicolor/scalable/apps
 XKB=$HOME/.config/xkb
 CONF=${XDG_CONFIG_HOME:-$HOME/.config}/local-llm-hotkeys/config
 CHATS=${XDG_DATA_HOME:-$HOME/.local/share}/local-llm-hotkeys/chats
-OLD_CONF=${XDG_CONFIG_HOME:-$HOME/.config}/uktr/config     # before 0.4
+OLD_CONF=$HOME/.config/uktr/config                         # before 0.4 (it did not use XDG_CONFIG_HOME)
 OLD_CHATS=${XDG_DATA_HOME:-$HOME/.local/share}/uktr/ask    # before 0.4
 MODELS="translategemma:4b hy-mt2-flash:1.8b whisper-v3:turbo qwen3.5:9b"
 
@@ -45,6 +45,10 @@ src() {  # the file behind a command: aikey runs ask.py (called ask before 0.4)
     if [ "$1" = aikey ]; then echo ask.py; else echo "$1.py"; fi
 }
 
+chats_open() {  # a chat runs (aikey, or an eli12 or uktr window): it saves in the folder it found at its start
+    pgrep -u "$(id -u)" -f "($BIN/(ask|aikey|eli12|uktr)|$REPO/(ask|eli12|uktr)\.py)( |\$)" >/dev/null
+}
+
 uninstall() {
     step "Removing local-llm-hotkeys"
     for t in $TOOLS ask; do  # ask: the command before 0.4
@@ -57,7 +61,8 @@ uninstall() {
     [ -f "$ICONS/local-llm-hotkeys.svg" ] && rm "$ICONS/local-llm-hotkeys.svg" && ok "removed the icon"
     for b in kbuildsycoca6 kbuildsycoca5; do command -v $b >/dev/null && $b >/dev/null 2>&1 && break; done
     step "Kept"
-    echo "  your config ($CONF) and saved chats ($CHATS/)."
+    for p in "$CONF" "$OLD_CONF"; do [ -f "$p" ] && echo "  your config: $p"; done
+    for p in "$CHATS" "$OLD_CHATS"; do [ -d "$p" ] && echo "  your saved chats: $p/"; done
     [ -f "$XKB/symbols/copilot" ] && echo "  the Copilot key map: rm $XKB/rules/evdev $XKB/symbols/copilot (then log in again)."
     exit 0
 }
@@ -141,7 +146,11 @@ for t in $TOOLS; do
 done
 # Before 0.4 the chat command was ask, a name that other programs use too (the Alexa Skills Kit CLI).
 if [ "$(readlink -f "$BIN/ask" 2>/dev/null)" = "$REPO/ask.py" ]; then
-    rm "$BIN/ask" && ok "removed $BIN/ask: the chat command is aikey now"
+    if [ "$(readlink -f "$BIN/aikey" 2>/dev/null)" = "$REPO/ask.py" ]; then
+        rm "$BIN/ask" && ok "removed $BIN/ask: the chat command is aikey now"
+    else
+        warn "$BIN/ask kept: the chat command is aikey now, but $BIN/aikey is not ours"
+    fi
 fi
 case ":$PATH:" in *":$BIN:"*) ;; *) warn "$BIN is not in your PATH; add it, or the hotkeys cannot find the commands" ;; esac
 
@@ -159,10 +168,21 @@ if grep -qE '^[[:space:]]*(UKTR_(URL|LANGUAGE|ASR_URL|ASR_MODEL)|ASK_[A-Z_]+)=' 
     echo "  It uses names from before 0.4 (UKTR_URL, ASK_MODEL ...). They still work; the new names"
     echo "  (HOTKEYS_URL, AIKEY_MODEL ...) are in config.example and the README."
 fi
-if [ ! -e "$CHATS" ] && [ -d "$OLD_CHATS" ]; then
+if [ -d "$OLD_CHATS" ] && [ ! -L "$OLD_CHATS" ] && chats_open; then
+    warn "your saved chats are still in $OLD_CHATS: a chat window is open, and it would keep"
+    echo "    saving there. Close the chat windows, then run ./install.sh again to move them to $CHATS."
+elif [ ! -e "$CHATS" ] && [ -d "$OLD_CHATS" ] && [ ! -L "$OLD_CHATS" ]; then
     mkdir -p "$(dirname "$CHATS")" && mv "$OLD_CHATS" "$CHATS" && chmod 700 "$CHATS" \
         && ok "moved your saved chats from $OLD_CHATS to $CHATS"
     rmdir "$(dirname "$OLD_CHATS")" 2>/dev/null
+elif [ -d "$CHATS" ] && [ -d "$OLD_CHATS" ] && [ ! -L "$OLD_CHATS" ]; then
+    for f in "$OLD_CHATS"/*.json; do [ -f "$f" ] && mv -n "$f" "$CHATS/"; done  # -n: never over a chat
+    if rmdir "$OLD_CHATS" 2>/dev/null; then
+        ok "moved your saved chats from $OLD_CHATS to $CHATS"
+        rmdir "$(dirname "$OLD_CHATS")" 2>/dev/null
+    else
+        warn "$OLD_CHATS still has files that are not in $CHATS (same name, or not a chat); look at them yourself"
+    fi
 fi
 lang=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import llm; print(llm.language()[1])' "$REPO")
 ok "your language: $lang (set HOTKEYS_LANGUAGE in the config to change it)"

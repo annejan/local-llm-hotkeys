@@ -347,6 +347,8 @@ cd local-llm-hotkeys
 - links the commands into `~/.local/bin` (they point into this directory, so keep it where
   it is; after a `git pull` you have the new version at once),
 - creates `~/.config/local-llm-hotkeys/config` if there is none, and shows your language,
+- after an update from before 0.4: moves your config and saved chats out of the `uktr`
+  folders and removes the old `ask` command (see Configuration, "Renamed in 0.4"),
 - installs the KDE hotkeys, the Dolphin menu and the Copilot key map,
 - checks the model server and lists the models that are missing.
 
@@ -488,11 +490,13 @@ without an answer", and the fix is `systemctl --user restart flm`.
 Environment variables with the same name override the file. See `config.example`.
 
 **Renamed in 0.4**, and the old names still work: the config moved from `~/.config/uktr/config`
-and the saved chats from `~/.local/share/uktr/ask/` (`./install.sh` moves both), the settings
-for every tool went from `UKTR_` to `HOTKEYS_` (`HOTKEYS_URL`, `HOTKEYS_LANGUAGE`,
-`HOTKEYS_ASR_URL`, `HOTKEYS_ASR_MODEL`), and the `ask` command is `aikey` now, with
-`AIKEY_MODEL`, `AIKEY_MODELS`, `AIKEY_HISTORY` and `AIKEY_SCREEN_PROMPT`. Settings of one tool
-(`UKTR_MODEL`, `ELI12_LANG`, ...) keep their names.
+and the saved chats from `~/.local/share/uktr/ask/`, the settings for every tool went from
+`UKTR_` to `HOTKEYS_` (`HOTKEYS_URL`, `HOTKEYS_LANGUAGE`, `HOTKEYS_ASR_URL`,
+`HOTKEYS_ASR_MODEL`), and the `ask` command is `aikey` now, with `AIKEY_MODEL`, `AIKEY_MODELS`,
+`AIKEY_HISTORY` and `AIKEY_SCREEN_PROMPT`. Settings of one tool (`UKTR_MODEL`, `ELI12_LANG`,
+...) keep their names. `./install.sh` moves the config and the chats (close the chat windows
+first; it tells you if one is open) and removes the old `ask` link. It does not rename the keys
+in your config: do that when you like.
 
 | Key | Default | Meaning |
 |---|---|---|
