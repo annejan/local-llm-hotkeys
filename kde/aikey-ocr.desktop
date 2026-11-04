@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=aikey: copy the text of a screen region
+Comment=Select part of the screen; its text goes to the clipboard (OCR with tesseract and the local LLM)
+Exec=aikey --ocr
+Icon=spectacle
+Categories=Utility;
+X-KDE-Shortcuts=Meta+Shift+O

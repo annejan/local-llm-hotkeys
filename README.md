@@ -40,6 +40,7 @@ key? Every action also has a Meta+Shift shortcut.
 | Ctrl+Alt+Copilot or Meta+Shift+W | explain the active window (`aikey --screen`) |
 | Meta+Shift+X | explain a screen region that you select (`aikey --region`) |
 | Meta+Shift+Y | translate a screen region (`uktr shot`) |
+| Meta+Shift+O | copy the text of a screen region (`aikey --ocr`) |
 | Meta+Shift+F | fix spelling and grammar of the clipboard (`fixtext clip`) |
 | Meta+Shift+D | dictate: speak, and the text is typed into the active window (`dictate`) |
 | Meta+Ctrl+Shift+D | dictate and translate: speak your language, English is typed (`dictate --translate`) |
@@ -53,7 +54,8 @@ AltGr works as Alt. See [Install](#install) for the setup and [the Copilot key](
   clipboard, a screen region, documents, or live subtitles for audio.
 - **eli12**: explains a text like you are 12.
 - **fixtext**: fixes spelling and grammar of the clipboard.
-- **aikey**: a chat window for quick questions and follow-ups, also about a screenshot.
+- **aikey**: a chat window for quick questions and follow-ups, also about a screenshot or a
+  pasted image; and the text of a screen region on the clipboard (OCR).
 - **dictate**: speak, and the text is typed into the active window.
 
 All of them talk to any OpenAI-compatible server. The default setup runs everything on the NPU
@@ -199,6 +201,7 @@ KDE Plasma 6.8 on Wayland"), so commands fit your system.
 | `aikey --popup` | chat window | chat window |
 | `aikey --screen` | screenshot of the active window | chat window |
 | `aikey --region` | screenshot of a region that you select | chat window |
+| `aikey --ocr` | text in a region that you select | clipboard |
 | `aikey` | chat in the terminal (`/new` starts a new chat, Ctrl+D or `/quit` quits) | terminal |
 | `aikey --list` | saved chats, newest first | stdout |
 | `aikey --resume [N]` | continue saved chat N (default 1, the newest) | terminal |
@@ -230,6 +233,23 @@ rectangle around it. Press Esc to cancel.
 `qwen3.5:9b` reads images, so this is the same model as the chat: about 8 s for the first
 answer on the NPU. The screenshot is scaled to 1280 pixels and saved with the chat. Set
 `AIKEY_SCREEN_PROMPT` to change the first question. The answer is in your language.
+
+### Copy the text of a screen region
+
+Press Meta+Shift+O (`aikey --ocr`), drag a rectangle around some text, and paste it where you
+want it. Two programs read it. tesseract puts its reading on the clipboard at once (under a
+second). Then the model reads the image again, with tesseract's reading as a hint, and its
+reading replaces the first one, 10 to 25 s later. A notification says when.
+
+tesseract gets the characters right on plain text, but makes a mess of input boxes and buttons,
+and reads only the languages it has data for. The model reads any layout and script, but
+alone it sometimes writes a word that is not there. With tesseract's reading as a hint it did
+not, in a test on six screens. If you copy something else before the model is done, your copy
+stays on the clipboard. Without tesseract, only the model reads; if the model fails, tesseract's
+reading stays.
+
+`OCR_MODEL` (default: `AIKEY_MODEL`) must read images. `OCR_LANGS` sets tesseract's languages,
+such as `eng+nld`; by default it uses all languages it has data for (more is slower).
 
 ### Paste or drop an image
 
@@ -312,7 +332,7 @@ sudo pacman -S --needed wl-clipboard kdialog libnotify spectacle pyside6 \
 | wl-clipboard, kdialog, libnotify | the hotkeys: clipboard, popup, notifications |
 | PySide6 | the `aikey` window, also for `eli12` and `uktr` (without it, `aikey` opens in Konsole, `eli12` and `uktr` in a text box) |
 | spectacle | `uktr shot`, `aikey --screen` |
-| tesseract with Ukrainian data | `uktr shot` (OCR) |
+| tesseract with Ukrainian data | `uktr shot` (OCR); `aikey --ocr` (optional, faster and more exact) |
 | poppler (`pdftotext`), pandoc | PDF, and epub/docx/odt/html files |
 | pulseaudio-utils (`parec`) | `uktr listen`, `dictate` |
 
@@ -549,6 +569,8 @@ does not rename the keys in your config: do that when you like.
 | `DICTATE_MAX` | `120` | longest dictation, in seconds |
 | `DICTATE_TO` | `English` | language that `dictate --translate` types |
 | `DICTATE_MODEL` | `UKTR_MODEL` | translation model for `dictate --translate` |
+| `OCR_MODEL` | `AIKEY_MODEL` | model that reads text for `aikey --ocr` (must read images) |
+| `OCR_LANGS` | all installed | tesseract languages for `aikey --ocr`, such as `eng+nld` |
 | `AIKEY_SCREEN_PROMPT` | (English, answer in your language) | first question for `aikey --screen`; `{language}` = your language |
 
 Example, one-off: translate to German, and subtitles for Russian audio:
