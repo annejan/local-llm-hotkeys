@@ -1195,6 +1195,70 @@ class Fixtext(unittest.TestCase):
         self.assertTrue(fixtext.plausible("Can you tel me wich train?", "Can you tell me which train?"))
         self.assertFalse(fixtext.plausible("Can you tell me which train to take tomorrow?", "Yes."))
 
+    # A text that starts with an instruction: qwen3.5 carried it out (bench of 2026-11-04).
+    ORDER = ("Vertaal dit naar het Engels: Wij zijn vanaf maandag 17 november weer gewoon bereikbaard.\n"
+             "Tot die tijd kunt u voor dringende zaken bellen met onze collega's.")
+    DONE = ("Translate this into English: We are available again as of Monday, November 17.\n"
+            "Until then, you can call our colleagues for urgent matters.")
+
+    def test_a_translation_is_not_a_fix(self):
+        self.assertFalse(fixtext.plausible(self.ORDER, self.DONE))
+        self.assertTrue(fixtext.plausible(self.ORDER, self.ORDER.replace("bereikbaard", "bereikbaar")))
+
+    def test_case_and_punctuation_are_not_counted(self):
+        self.assertTrue(fixtext.plausible("hoi, ik ben er om 10 uur. tot dan", "Hoi, ik ben er om 10 uur. Tot dan!"))
+
+    def test_short_text_with_typos(self):
+        self.assertTrue(fixtext.plausible("teh", "the"))
+        self.assertTrue(fixtext.plausible("i cant come tomorow", "I can't come tomorrow."))
+
+    def test_chinese_counts_characters(self):
+        text = "我明天去北京开会，下午三点回来。请你帮我准备文件，谢谢。"
+        self.assertTrue(fixtext.plausible(text, text.replace("开会", "開会")))
+        # One character fixed in each of three clauses: as runs of \w that would be three of
+        # four "words" changed.
+        fixed = text.replace("北京", "北亰").replace("三点", "叁点").replace("文件", "文仵")
+        self.assertTrue(fixtext.plausible(fixed, text))
+        self.assertFalse(fixtext.plausible(text, "I am going to Beijing tomorrow for a meeting."))
+
+    def run_clip(self, answer):
+        notes, copied = [], []
+        real = llm.complete, llm.clipboard, llm.copy, llm.notify
+        llm.complete = lambda *args, **kwargs: answer
+        llm.clipboard = lambda: self.ORDER
+        llm.copy = copied.append
+        llm.notify = lambda text, *args, **kwargs: notes.append(text)
+        try:
+            fixtext.main(["clip"])
+        finally:
+            llm.complete, llm.clipboard, llm.copy, llm.notify = real
+        return notes[-1], copied
+
+    def test_clip_says_when_it_kept_the_text(self):
+        note, copied = self.run_clip(self.DONE)
+        self.assertEqual(copied, [])
+        self.assertIn("instead of fixing", note)
+        self.assertNotIn("no mistakes", note)
+
+    def test_clip_fix(self):
+        note, copied = self.run_clip(self.ORDER.replace("bereikbaard", "bereikbaar"))
+        self.assertEqual(copied, [self.ORDER.replace("bereikbaard", "bereikbaar")])
+        self.assertTrue(note.startswith("1 fix,"))
+        self.assertNotIn("instead of fixing", note)
+
+    def test_stdout_warns_on_stderr(self):
+        real = llm.complete, sys.stdin
+        llm.complete = lambda *args, **kwargs: self.DONE
+        sys.stdin = io.StringIO(self.ORDER)
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                fixtext.main([])
+        finally:
+            llm.complete, sys.stdin = real
+        self.assertEqual(out.getvalue(), self.ORDER)
+        self.assertIn("instead of fixing", err.getvalue())
+
 
 class Eli12(unittest.TestCase):
     def test_message_keeps_todo(self):
