@@ -1,4 +1,5 @@
 """Tests for the logic that needs no LLM server. Run: python3 -m unittest discover -s tests"""
+import base64
 import builtins
 import contextlib
 import importlib.util
@@ -380,8 +381,8 @@ class AskModels(unittest.TestCase):
 
 
 @unittest.skipUnless(ask.can_window(), "needs PySide6")
-class WindowModels(unittest.TestCase):
-    """The model menu in the window, offscreen, with a fake model stream."""
+class QtWindow(unittest.TestCase):
+    """The chat window, offscreen, with a fake model stream."""
 
     def setUp(self):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -392,8 +393,11 @@ class WindowModels(unittest.TestCase):
         ask.SAVE_DIR, ask.SAVE = self.dir.name, True
         self.used = []
 
+        self.sent = []
+
         def stream(messages, model, temperature=0.5, timeout=600, cancel=None):
             self.used.append(model)
+            self.sent.append(messages)
             yield f"answer by {model}"
         llm.chat_stream = stream
         QApplication.exec = lambda app: 0
@@ -424,6 +428,10 @@ class WindowModels(unittest.TestCase):
     def pick(self, w, model):
         w.models.setCurrentText(model)
         w.models.activated.emit(w.models.currentIndex())
+
+
+class WindowModels(QtWindow):
+    """The model menu in the window."""
 
     def test_no_menu_with_fewer_than_two(self):
         self.assertIsNone(self.window(["a:1b"]).models)
@@ -470,6 +478,117 @@ class WindowModels(unittest.TestCase):
         self.ask(w, "tekst")
         status, _ = self.ask(w, "wat betekent dat?")
         self.assertEqual(status, f"loading {ask.MODEL}…")
+
+
+class PastedImages(QtWindow):
+    """Paste or drop an image in the question box: it goes with the next question."""
+
+    def image(self, w=2000, h=1000, color="red", alpha=False):
+        from PySide6.QtGui import QColor, QImage
+        image = QImage(w, h, QImage.Format_ARGB32 if alpha else QImage.Format_RGB32)
+        image.fill(QColor(0, 0, 0, 0) if alpha else QColor(color))
+        return image
+
+    def mime(self, image=None, files=(), text=None):
+        from PySide6.QtCore import QMimeData, QUrl
+        m = QMimeData()
+        if image is not None:
+            m.setImageData(image)
+        if files:
+            m.setUrls([QUrl.fromLocalFile(f) for f in files])
+        if text is not None:
+            m.setText(text)
+        return m
+
+    def decoded(self, url):
+        from PySide6.QtGui import QImage
+        self.assertTrue(url.startswith("data:image/jpeg;base64,"))
+        return QImage.fromData(base64.b64decode(url.split(",", 1)[1]))
+
+    def test_image_files_and_other_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            png, txt = os.path.join(d, "a.png"), os.path.join(d, "notes.png.txt")
+            self.image().save(png)
+            with open(txt, "w") as f:
+                f.write("no image")
+            self.assertTrue(ask.has_images(self.mime(files=[txt, png])))
+            self.assertEqual(len(ask.pasted_images(self.mime(files=[txt, png]))), 1)
+            self.assertFalse(ask.has_images(self.mime(files=[txt], text=txt)))
+            self.assertEqual(ask.pasted_images(self.mime(files=[txt])), [])
+            self.assertFalse(ask.has_images(self.mime(text="just text")))
+
+    def test_big_photo_is_read_small(self):
+        with tempfile.TemporaryDirectory() as d:
+            jpg = os.path.join(d, "photo.jpg")
+            self.image(4000, 3000).save(jpg)
+            image = ask.pasted_images(self.mime(files=[jpg]))[0]
+        self.assertEqual((image.width(), image.height()), (ask.IMAGE_SIZE, 960))
+
+    def test_photo_is_turned_as_the_camera_says(self):
+        from PySide6.QtGui import QImageIOHandler, QImageWriter
+        with tempfile.TemporaryDirectory() as d:
+            jpg = os.path.join(d, "phone.jpg")
+            writer = QImageWriter(jpg)
+            writer.setTransformation(QImageIOHandler.TransformationRotate90)  # EXIF orientation
+            self.assertTrue(writer.write(self.image(200, 100)))
+            image = ask.pasted_images(self.mime(files=[jpg]))[0]
+        self.assertEqual((image.width(), image.height()), (100, 200))
+
+    def test_drag_over_accepts_a_bare_image(self):
+        """Spectacle's Copy gives an image and no text; a plain text box would refuse it."""
+        w = self.window(["a:1b"])
+        self.assertTrue(w.input.canInsertFromMimeData(self.mime(self.image(20, 20))))
+
+    def test_data_url_scales_and_flattens(self):
+        image = self.decoded(ask.data_url(self.image()))
+        self.assertEqual((image.width(), image.height()), (ask.IMAGE_SIZE, 640))
+        from PySide6.QtGui import QColor
+        clear = self.decoded(ask.data_url(self.image(10, 10, alpha=True)))
+        self.assertGreater(QColor(clear.pixel(5, 5)).lightness(), 240)  # white, not black
+
+    def test_paste_then_send(self):
+        w = self.window(["a:1b"])
+        w.input.setPlainText("wat staat hier?")
+        w.input.insertFromMimeData(self.mime(self.image()))
+        self.assertEqual(w.input.toPlainText(), "wat staat hier?", "the image is not pasted as text")
+        self.assertFalse(w.attached.isHidden())
+        self.assertIn("1 image", w.attached_text.text())
+        self.ask(w, w.input.toPlainText())
+        content = w.chat.turns[0]["content"]
+        self.assertEqual(ask.text_of(content), "wat staat hier?")
+        self.assertEqual(len(ask.images_of(content)), 1)
+        self.assertEqual(ask.images_of(self.sent[0][-1]["content"]), ask.images_of(content))
+        self.assertEqual(w.pending, [])
+        self.assertTrue(w.attached.isHidden())
+        self.assertTrue(w.chat.title.startswith("📷 "))
+
+    def test_only_an_image_asks_the_screen_question(self):
+        w = self.window(["a:1b"])
+        w.input.insertFromMimeData(self.mime(self.image()))
+        self.ask(w, "")
+        prompt = ask.SCREEN_PROMPT.replace("{language}", llm.language()[1])
+        self.assertEqual(ask.text_of(w.chat.turns[0]["content"]), prompt)
+
+    def test_text_still_pastes(self):
+        w = self.window(["a:1b"])
+        w.input.insertFromMimeData(self.mime(text="/home/me/notes.txt"))
+        self.assertEqual(w.input.toPlainText(), "/home/me/notes.txt")
+        self.assertEqual(w.pending, [])
+        w.send()
+        self.assertEqual(w.chat.turns[0]["content"], "/home/me/notes.txt")
+
+    def test_at_most_max_images_and_remove(self):
+        w = self.window(["a:1b"])
+        for _ in range(ask.MAX_IMAGES + 1):
+            w.input.insertFromMimeData(self.mime(self.image(20, 20)))
+        self.assertEqual(len(w.pending), ask.MAX_IMAGES)
+        self.assertEqual(w.thumbs.count(), ask.MAX_IMAGES)
+        self.assertIn(f"at most {ask.MAX_IMAGES}", w.status.text())
+        w.attach(None)
+        self.assertEqual((w.pending, w.thumbs.count()), ([], 0))
+        self.assertTrue(w.attached.isHidden())
+        w.send()
+        self.assertEqual(w.chat.turns, [], "nothing to send")
 
 
 class mock_confirm:

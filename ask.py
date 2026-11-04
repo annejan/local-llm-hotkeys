@@ -71,6 +71,7 @@ SCREEN_PROMPT = llm.conf.get("AIKEY_SCREEN_PROMPT", (
     "a question or a choice to make, explain it and say what to do. Answer in {language}."))
 IMAGE_SIZE = 1280  # longest side in pixels; bigger is slower and does not read better
 IMAGE_CHARS = 2000  # what an image counts for in HISTORY_CHARS
+MAX_IMAGES = 4  # pasted images per question; each one is about IMAGE_CHARS of the history
 
 RULES = ("You are a helpful assistant on the user's computer: {system}. Today is {today}. "
          "Answer in the language of the user's last message. Be short and concrete: a direct "
@@ -294,7 +295,6 @@ def images_of(content):
 def screenshot(region=False):
     """The active window, or a region you select, as a JPEG data URL (longest side
     IMAGE_SIZE). None if it failed or the selection was cancelled."""
-    from PySide6.QtCore import QBuffer, Qt
     from PySide6.QtGui import QImage
     with tempfile.TemporaryDirectory() as d:
         png = os.path.join(d, "shot.png")
@@ -302,14 +302,64 @@ def screenshot(region=False):
         subprocess.run(["spectacle", mode, "--background", "--nonotify", "-o", png],
                        capture_output=True)
         image = QImage(png)
-    if image.isNull():
-        return None
+    return None if image.isNull() else data_url(image)
+
+
+def data_url(image):
+    """A QImage as the model gets it: a JPEG data URL, longest side at most IMAGE_SIZE."""
+    from PySide6.QtCore import QBuffer, Qt
+    from PySide6.QtGui import QColor, QImage, QPainter
     if max(image.width(), image.height()) > IMAGE_SIZE:
         image = image.scaled(IMAGE_SIZE, IMAGE_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    if image.hasAlphaChannel():  # JPEG has no transparency: put the image on white
+        flat = QImage(image.size(), QImage.Format_RGB32)
+        flat.fill(QColor("white"))
+        painter = QPainter(flat)
+        painter.drawImage(0, 0, image)
+        painter.end()
+        image = flat
     buf = QBuffer()
     buf.open(QBuffer.WriteOnly)
     image.save(buf, "JPG", 85)
     return "data:image/jpeg;base64," + base64.b64encode(bytes(buf.data())).decode()
+
+
+def _image_files(mime):
+    """The local files in pasted or dropped data that are images. QImageReader.canRead looks
+    at the start of a file only, so a big file that is no image is not read."""
+    from PySide6.QtGui import QImageReader
+    paths = [url.toLocalFile() for url in mime.urls()] if mime.hasUrls() else []
+    return [p for p in paths if p and os.path.isfile(p) and QImageReader(p).canRead()]
+
+
+def has_images(mime):
+    """Does pasted or dropped data (a QMimeData) hold an image? Cheap: Qt asks this while
+    you drag over the window."""
+    return mime.hasImage() or bool(_image_files(mime))
+
+
+def pasted_images(mime):
+    """The images in pasted or dropped data, as QImages: an image itself (copied in Spectacle
+    or a browser), or image files (copied or dragged from Dolphin). Empty when there are none;
+    then it is pasted as text."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QImage, QImageReader
+    if mime.hasImage():
+        image = QImage(mime.imageData())
+        if not image.isNull():
+            return [image]
+    images = []
+    for path in _image_files(mime):
+        reader = QImageReader(path)
+        reader.setAutoTransform(True)  # a phone photo turned as the camera says (EXIF)
+        size = reader.size()
+        if size.isValid() and max(size.width(), size.height()) > IMAGE_SIZE:
+            # read a big photo at the size it gets anyway, not first at full size
+            reader.setScaledSize(size.scaled(IMAGE_SIZE, IMAGE_SIZE, Qt.KeepAspectRatio))
+        image = reader.read()
+        if not image.isNull():
+            images.append(image)
+    return images
 
 
 def title_of(question):
@@ -433,7 +483,7 @@ def window(first=None, chat=None, title=None):
     another tool). title: the window title."""
     try:
         from PySide6.QtCore import QByteArray, QObject, Qt, QTimer, Signal
-        from PySide6.QtGui import QDesktopServices, QIcon, QImage, QKeySequence, QShortcut, QTextDocument
+        from PySide6.QtGui import QDesktopServices, QIcon, QImage, QKeySequence, QPixmap, QShortcut, QTextDocument
         from PySide6.QtWidgets import (
             QApplication,
             QComboBox,
@@ -501,9 +551,21 @@ def window(first=None, chat=None, title=None):
             return name
 
     class Input(QPlainTextEdit):
-        def __init__(self, send):
+        """The question box. A pasted or dropped image goes to attach(), not into the text."""
+
+        def __init__(self, send, attach):
             super().__init__()
-            self.send = send
+            self.send, self.attach = send, attach
+
+        def canInsertFromMimeData(self, source):
+            return has_images(source) or super().canInsertFromMimeData(source)
+
+        def insertFromMimeData(self, source):
+            images = pasted_images(source)
+            if images:
+                self.attach(images)
+            else:
+                super().insertFromMimeData(source)
 
         def keyPressEvent(self, e):
             if e.key() in (Qt.Key_Return, Qt.Key_Enter) and not e.modifiers() & Qt.ShiftModifier:
@@ -530,9 +592,22 @@ def window(first=None, chat=None, title=None):
             self.list.setVisible(SAVE)
 
             self.view = View()
-            self.input = Input(self.send)
-            self.input.setPlaceholderText("Ask something… (Enter sends, Shift+Enter is a new line)")
+            self.input = Input(self.send, self.attach)
+            self.input.setPlaceholderText("Ask something… (Enter sends, Shift+Enter is a new line; "
+                                          "paste or drop an image to ask about it)")
             self.input.setFixedHeight(90)
+            # Pasted images wait here, as data URLs, for the next question.
+            self.pending = []
+            self.thumbs = QHBoxLayout()
+            self.thumbs.setContentsMargins(0, 0, 0, 0)
+            self.attached = QWidget()
+            bar = QHBoxLayout(self.attached)
+            bar.setContentsMargins(0, 0, 0, 0)
+            bar.addLayout(self.thumbs)
+            self.attached_text = QLabel()
+            bar.addWidget(self.attached_text, 1)
+            bar.addWidget(QPushButton("Remove", clicked=lambda: self.attach(None)))
+            self.attached.setVisible(False)
             self.status = QLabel()
             self.button = QPushButton("Send", clicked=lambda: self.send())
             new = QPushButton("New chat", clicked=self.new_chat)
@@ -556,6 +631,7 @@ def window(first=None, chat=None, title=None):
             layout = QVBoxLayout(right)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.addWidget(self.view, 1)
+            layout.addWidget(self.attached)
             layout.addWidget(self.input)
             layout.addLayout(row)
             split = QSplitter()
@@ -689,14 +765,43 @@ def window(first=None, chat=None, title=None):
             self.view.show_markdown("\n\n---\n\n".join(parts))
             bar.setValue(bar.maximum() if follow or at_end else pos)
 
+        def attach(self, images):
+            """Add pasted images (QImages) to the next question; None removes them all."""
+            if images is None:
+                self.pending = []
+            else:
+                room = MAX_IMAGES - len(self.pending)
+                self.pending += [data_url(image) for image in images[:room]]
+                if len(images) > room:
+                    self.status.setText(f"at most {MAX_IMAGES} images per question")
+            while self.thumbs.count():
+                self.thumbs.takeAt(0).widget().deleteLater()
+            for url in self.pending:
+                thumb = QLabel()
+                thumb.setPixmap(QPixmap.fromImage(QImage.fromData(base64.b64decode(url.split(",", 1)[1])))
+                                .scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                self.thumbs.addWidget(thumb)
+            n = len(self.pending)
+            self.attached_text.setText(f"{n} image{'s' if n > 1 else ''} with your next question")
+            self.attached.setVisible(bool(n))
+            self.input.setFocus()
+
         def send(self, question=None):
-            """Send the input box, or a given question (text, or a list with a screenshot)."""
+            """Send the input box with the pasted images, or a given question (text, or a list
+            with a screenshot)."""
             if self.busy:
                 return self.stop_answer()
             if not question:
-                question = self.input.toPlainText().strip()
-                if not question:
+                text = self.input.toPlainText().strip()
+                if not text and not self.pending:
                     return
+                question = text
+                if self.pending:
+                    # Only an image: ask what is on it, as for a screenshot.
+                    text = text or SCREEN_PROMPT.replace("{language}", llm.language()[1])
+                    question = [{"type": "text", "text": text},
+                                *({"type": "image_url", "image_url": {"url": url}} for url in self.pending)]
+                    self.attach(None)
                 self.input.clear()
             self.busy, self.answer, self.error = True, "", ""
             self.stop.clear()
