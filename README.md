@@ -192,6 +192,7 @@ KDE Plasma 6.8 on Wayland"), so commands fit your system.
 | Ctrl+N | new chat |
 | Ctrl+H | show or hide the saved chats |
 | Ctrl+Shift+C | copy the last answer |
+| Ctrl+V on an image | ask about the image (also: drag it to the question box) |
 
 | Command | Input | Output |
 |---|---|---|
@@ -229,6 +230,15 @@ rectangle around it. Press Esc to cancel.
 `qwen3.5:9b` reads images, so this is the same model as the chat: about 8 s for the first
 answer on the NPU. The screenshot is scaled to 1280 pixels and saved with the chat. Set
 `AIKEY_SCREEN_PROMPT` to change the first question. The answer is in your language.
+
+### Paste or drop an image
+
+Paste an image in the question box (Ctrl+V), or drag it there: a picture copied in Spectacle
+or a browser, or image files copied or dragged from Dolphin. It shows as a thumbnail above the
+box and goes with your next question; Remove takes it off. Without a question, the model gets
+the screenshot question. Up to 4 images per question, scaled to 1280 pixels and saved with the
+chat. Other files paste as their path, as before. The model of the chat must read images:
+`qwen3.5:9b` and `gemma4-it:e4b` do, `gpt-oss:20b` does not.
 
 A web page in the screenshot can tell the model to write a link that sends your chat to
 someone else. So a link in an answer opens only after the window shows you the full address
