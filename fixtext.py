@@ -28,21 +28,37 @@ RULES = ("You are a proofreader. The user message is a text between <text> tags.
 TAGS = re.compile(r"^\s*<text>\s*|\s*</text>\s*$")
 
 
+# Words for the check below: runs of letters and digits, and each Chinese or Japanese character
+# on its own (those languages do not put spaces between words).
+WORDS = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]|\w+")
+
+
 def plausible(part, fixed):
-    """A small model sometimes answers or summarizes the text instead of fixing it. A real fix
-    keeps about the same length; anything else keeps the original part."""
-    return 0.7 < len(fixed) / max(len(part), 1) < 1.4
+    """A model sometimes answers, summarizes or translates the text instead of fixing it. A real
+    fix keeps about the same length and most of the words (case and punctuation aside); anything
+    else keeps the original part."""
+    if not 0.7 < len(fixed) / max(len(part), 1) < 1.4:
+        return False
+    a, b = WORDS.findall(part.lower()), WORDS.findall(fixed.lower())
+    same = sum(m.size for m in difflib.SequenceMatcher(None, a, b, autojunk=False).get_matching_blocks())
+    return len(a) - same <= max(2, len(a) // 2)
 
 
 def fix(text):
-    out = []
+    """The fixed text, and the number of parts in which the model's answer was not a fix (those
+    parts stay as they were)."""
+    out, kept = [], 0
     for part in llm.chunks(text):
         fixed = TAGS.sub("", llm.complete(RULES, f"<text>\n{part}\n</text>", MODEL, temperature=0.1))
-        out.append(fixed if plausible(part, fixed) else part)
+        if plausible(part, fixed):
+            out.append(fixed)
+        else:
+            out.append(part)
+            kept += 1
     # Keep the leading and trailing whitespace of the original (a trailing newline matters on paste).
     lead = text[:len(text) - len(text.lstrip())]
     trail = text[len(text.rstrip()):]
-    return lead + "\n\n".join(out).strip() + trail
+    return lead + "\n\n".join(out).strip() + trail, kept
 
 
 def changes(old, new, limit=6):
@@ -72,15 +88,19 @@ def main(argv):
             raise llm.Error(f"text too long ({len(text)} chars, max {MAX_CHARS})")
         if clip:
             llm.notify(f"fixing {len(text.split())} words…", "fixtext")
-        out = fix(text)
+        out, kept = fix(text)
+        skipped = (f"the model rewrote {'a part' if kept == 1 else f'{kept} parts'} instead of "
+                   "fixing it; kept as it was") if kept else ""
         if not clip:
+            if skipped:
+                print(f"fixtext: {skipped}", file=sys.stderr)
             return sys.stdout.write(out)
         n, summary = changes(text, out)
         if n == 0:
-            return llm.notify("no mistakes found, clipboard unchanged", "fixtext")
+            return llm.notify(f"{skipped or 'no mistakes found'}, clipboard unchanged", "fixtext")
         llm.copy(out)
-        llm.notify(f"{n} fix{'es' if n > 1 else ''}, on the clipboard (Ctrl+V):\n{summary}",
-                   "fixtext", 10000)
+        llm.notify(f"{n} fix{'es' if n > 1 else ''}, on the clipboard (Ctrl+V):\n{summary}"
+                   + (f"\n({skipped})" if skipped else ""), "fixtext", 10000)
 
 
 if __name__ == "__main__":

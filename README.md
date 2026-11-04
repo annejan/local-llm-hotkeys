@@ -171,8 +171,10 @@ changes (`wich → which`, `tomorow? → tomorrow?`) with the fixed text on the 
 there are no mistakes, the clipboard stays as it was. A short paragraph takes 3–6 s on the
 NPU.
 
-The model sometimes answers a question in the text instead of fixing it. If a fixed part is
-much shorter or longer than the original, `fixtext` keeps the original part. Model:
+The model sometimes answers a question in the text, or carries out an instruction in it
+("translate this"), instead of fixing it. If a fixed part is much shorter or longer than the
+original, or more than half of its words changed, `fixtext` keeps the original part and says
+so in the notification. Model:
 `FIX_MODEL`, default `qwen3.5:9b`. Text over 20,000 characters is refused.
 
 ## aikey: chat
