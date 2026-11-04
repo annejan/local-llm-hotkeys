@@ -830,6 +830,148 @@ class HotkeyFiles(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(InstallMigration.REPO, "kde", name + ".desktop")))
 
 
+    def test_no_two_hotkeys_share_a_key(self):
+        seen = {}
+        for f in sorted(os.listdir(os.path.join(InstallMigration.REPO, "kde"))):
+            if f.endswith(".desktop"):
+                with open(os.path.join(InstallMigration.REPO, "kde", f), encoding="utf-8") as d:
+                    line = next((x for x in d if x.startswith("X-KDE-Shortcuts=")), "=")
+                for key in filter(None, line.split("=", 1)[1].strip().split(",")):
+                    self.assertNotIn(key, seen, f"{f} and {seen.get(key)} both use {key}")
+                    seen[key] = f
+        self.assertEqual(seen["Meta+Shift+O"], "aikey-ocr.desktop")
+
+
+class Ocr(unittest.TestCase):
+    """aikey --ocr: tesseract at once, then the model's reading, with tesseract's as a hint."""
+
+    class Image:
+        """Stands in for a QImage, so these tests need no PySide6 (CI has none)."""
+
+        def save(self, path):
+            with open(path, "wb") as f:
+                f.write(b"png")
+            return True
+
+    def setUp(self):
+        self.image = self.Image()
+        self.real = (ask.grab, ask.tesseract, llm.chat, llm.copy, llm.clipboard, llm.notify, ask.OCR_LANGS,
+                     ask.data_url)
+        ask.data_url = lambda image: "data:image/jpeg;base64,AAAA"
+        self.clip, self.notes, self.asked = [""], [], []
+        ask.grab = lambda region=False: self.image
+        llm.copy = self.clip.append
+        llm.clipboard = lambda: self.clip[-1]
+        llm.notify = lambda text, *args, **kwargs: self.notes.append(text)
+
+    def tearDown(self):
+        (ask.grab, ask.tesseract, llm.chat, llm.copy, llm.clipboard, llm.notify, ask.OCR_LANGS,
+         ask.data_url) = self.real
+
+    def model(self, answer):
+        def chat(messages, model, temperature=0.2, timeout=600):
+            self.asked.append(messages[0]["content"])
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+        llm.chat = chat
+
+    def test_quick_then_better(self):
+        ask.tesseract = lambda image: "Kan de map niet openen 2T8"
+        self.model("Kan de map niet openen 2TB")
+        ask.ocr()
+        self.assertEqual(self.clip[1:], ["Kan de map niet openen 2T8", "Kan de map niet openen 2TB"])
+        prompt, image = self.asked[0]
+        self.assertIn("<ocr>\nKan de map niet openen 2T8\n</ocr>", prompt["text"])
+        self.assertTrue(image["image_url"]["url"].startswith("data:image/jpeg;base64,"))
+        self.assertTrue(self.notes[0].startswith("quick OCR on the clipboard"))
+        self.assertTrue(self.notes[-1].startswith("6 words on the clipboard"))
+
+    def test_without_tesseract(self):
+        ask.tesseract = lambda image: ""
+        self.model("```text\nPowerBox 600\n```")
+        ask.ocr()
+        self.assertEqual(self.clip[1:], ["PowerBox 600"])  # the code block taken off
+        self.assertNotIn("<ocr>", self.asked[0][0]["text"])
+
+    def test_model_fails_quick_stays(self):
+        ask.tesseract = lambda image: "quick"
+        self.model(llm.Error("server down"))
+        ask.ocr()
+        self.assertEqual(self.clip[1:], ["quick"])
+        self.assertIn("server down", self.notes[-1])
+
+    def test_model_fails_without_tesseract(self):
+        ask.tesseract = lambda image: ""
+        self.model(llm.Error("server down"))
+        with self.assertRaises(llm.Error):
+            ask.ocr()
+        self.model("")
+        with self.assertRaises(llm.Error):
+            ask.ocr()
+
+    def test_you_copied_something_else(self):
+        ask.tesseract = lambda image: "quick"
+
+        def chat(messages, model, temperature=0.2, timeout=600):
+            self.clip.append("something of yours")
+            return "better"
+        llm.chat = chat
+        ask.ocr()
+        self.assertEqual(self.clip[-1], "something of yours")
+        self.assertIn("copied something else", self.notes[-1])
+
+    def test_command(self):
+        real, used = ask.ocr, []
+        ask.ocr = lambda: used.append(1)
+        try:
+            ask.main(["--ocr"])
+        finally:
+            ask.ocr = real
+        self.assertEqual(used, [1])
+
+    def test_cancelled(self):
+        ask.grab = lambda region=False: None
+        ask.tesseract = lambda image: self.fail("no OCR after a cancelled selection")
+        ask.ocr()
+        self.assertEqual((self.clip, self.notes), ([""], []))
+
+    def test_tesseract_languages_and_text(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = os.path.join(d, "args")
+            fake = os.path.join(d, "tesseract")
+            with open(fake, "w") as f:
+                f.write(f"""#!/bin/sh
+echo "$@" >> {log}
+if [ "$1" = --list-langs ]; then printf 'List of available languages in "/x" (4):\\neng\\nnld\\nosd\\nukr\\n'; exit; fi
+test -s "$1" && printf '  read text  \\n'
+""")
+            os.chmod(fake, 0o755)
+            path = os.environ["PATH"]
+            os.environ["PATH"] = d + os.pathsep + path
+            try:
+                ask.tesseract = self.real[1]
+                ask.OCR_LANGS = ""
+                self.assertEqual(ask.tesseract_langs(), "eng+nld+ukr")
+                self.assertEqual(ask.tesseract(self.image), "read text")
+                ask.OCR_LANGS = "deu"
+                ask.tesseract(self.image)
+                with open(log) as f:
+                    calls = f.read().splitlines()
+                self.assertTrue(calls[-1].endswith("- -l deu"))
+                self.assertEqual(calls[1], "--list-langs")
+                self.assertTrue(calls[2].endswith("- -l eng+nld+ukr"))
+            finally:
+                os.environ["PATH"] = path
+        os.environ["PATH"] = "/nonexistent"
+        try:
+            self.assertEqual(ask.tesseract_langs(), "")
+            ask.OCR_LANGS = ""
+            self.assertEqual(ask.tesseract(self.image), "")
+        finally:
+            os.environ["PATH"] = path
+
+
 class ChatsFolder(unittest.TestCase):
     """0.4 moved the chats from uktr/ask to local-llm-hotkeys/chats; install.sh moves them."""
 
