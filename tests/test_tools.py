@@ -845,11 +845,19 @@ class HotkeyFiles(unittest.TestCase):
 class Ocr(unittest.TestCase):
     """aikey --ocr: tesseract at once, then the model's reading, with tesseract's as a hint."""
 
+    class Image:
+        """Stands in for a QImage, so these tests need no PySide6 (CI has none)."""
+
+        def save(self, path):
+            with open(path, "wb") as f:
+                f.write(b"png")
+            return True
+
     def setUp(self):
-        from PySide6.QtGui import QColor, QImage
-        self.image = QImage(40, 20, QImage.Format_RGB32)
-        self.image.fill(QColor("white"))
-        self.real = (ask.grab, ask.tesseract, llm.chat, llm.copy, llm.clipboard, llm.notify, ask.OCR_LANGS)
+        self.image = self.Image()
+        self.real = (ask.grab, ask.tesseract, llm.chat, llm.copy, llm.clipboard, llm.notify, ask.OCR_LANGS,
+                     ask.data_url)
+        ask.data_url = lambda image: "data:image/jpeg;base64,AAAA"
         self.clip, self.notes, self.asked = [""], [], []
         ask.grab = lambda region=False: self.image
         llm.copy = self.clip.append
@@ -857,7 +865,8 @@ class Ocr(unittest.TestCase):
         llm.notify = lambda text, *args, **kwargs: self.notes.append(text)
 
     def tearDown(self):
-        (ask.grab, ask.tesseract, llm.chat, llm.copy, llm.clipboard, llm.notify, ask.OCR_LANGS) = self.real
+        (ask.grab, ask.tesseract, llm.chat, llm.copy, llm.clipboard, llm.notify, ask.OCR_LANGS,
+         ask.data_url) = self.real
 
     def model(self, answer):
         def chat(messages, model, temperature=0.2, timeout=600):
